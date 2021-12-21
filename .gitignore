@@ -1,0 +1,6 @@
+tags
+TAGS
+*.bak
+.dep/
+build/
+personal/
