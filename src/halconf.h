@@ -303,7 +303,41 @@
  *          default configuration.
  */
 #if !defined(SERIAL_DEFAULT_BITRATE) || defined(__DOXYGEN__)
-#define SERIAL_DEFAULT_BITRATE      38400
+//#define SERIAL_DEFAULT_BITRATE      38400
+//
+// 
+//
+// First of all, the default RPi/BCM2835 baud rate is 115200.
+// That wouldn't mean much on its own: just change it. However, it isn't that easy.
+//
+// The baud rate used by the `uart_2ndstage` (mentioned in `config.txt`)
+// is 115200, and I haven't been able to find a way to change that. You'd think
+// that `init_uart_baud=...` would allow us to change this, but it doesn't.
+// (Maybe `init_uart_baud` changes the serial baud AFTER the 2ndstage finishes
+// its share of the boot process, or just before `kernel.img` is loaded.
+// I don't know because I have no reason to measure it.)
+//
+// Hence, chosing anything besides 115200 would require the dev-machine on the
+// other side of the serial connection to change its baud rate in the middle
+// of the transmission: highly undesirable!
+//
+// And note that I said "require", not "force". So the most likely outcome
+// (of using any non-115200 baud rate), would be someone trying to connect
+// to this thing, starting off in 115200 baud with everything working fine
+// for the `bootcode.bin+start.elf` boot messages, then (accidentally) staying
+// in 115200 as ChibiOS switches to ... whatever ... and now there is a rate mismatch!
+// At that point, transmission in either direction becomes VERY unlikely to work!
+// (In my experience, this just means that no characters are delivered/displayed.)
+//
+// I would prefer to be able to use lower rates so that I can use longer cable
+// runs with the UART (because that can be convenient sometimes), but it's
+// just not worth losing complete boot-to-halt debug messages over serial.
+//
+// Thus, this project shall always use 115200 as its serial baud rate (and at all times).
+//
+// -- Chad Joan, 2021-11-01
+//
+#define SERIAL_DEFAULT_BITRATE      115200
 #endif
 
 /**
@@ -314,7 +348,8 @@
  *          buffers.
  */
 #if !defined(SERIAL_BUFFERS_SIZE) || defined(__DOXYGEN__)
-#define SERIAL_BUFFERS_SIZE         16
+//#define SERIAL_BUFFERS_SIZE         16
+#define SERIAL_BUFFERS_SIZE         65536
 #endif
 
 /*===========================================================================*/

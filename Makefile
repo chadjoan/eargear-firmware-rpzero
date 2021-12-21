@@ -42,10 +42,10 @@ endif
 #
 
 # Define project name here
-PROJECT = ch
+PROJECT = kernel
 
 # Imported source files and paths
-CHIBIOS = ../..
+CHIBIOS = ChibiOS-RPi
 include $(CHIBIOS)/boards/RASPBERRYPI_MODB/board.mk
 include $(CHIBIOS)/os/hal/platforms/BCM2835/platform.mk
 include $(CHIBIOS)/os/hal/hal.mk
@@ -66,7 +66,7 @@ CSRC = $(PORTSRC) \
        $(BOARDSRC) \
        ${CHIBIOS}/os/various/shell.c \
        ${CHIBIOS}/os/various/chprintf.c \
-       main.c
+       src/main.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
 # setting.
@@ -95,7 +95,8 @@ TCPPSRC =
 # List ASM source files here
 ASMSRC = $(PORTASM)
 
-INCDIR = $(PORTINC) $(KERNINC) $(TESTINC) \
+INCDIR = src \
+         $(PORTINC) $(KERNINC) $(TESTINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) \
          $(CHIBIOS)/os/various
 
@@ -194,4 +195,42 @@ ULIBS =
 # End of user defines
 ##############################################################################
 
+##############################################################################
+# The 'all' target and related things are in this include
+#
+
 include $(CHIBIOS)/os/ports/GCC/ARM/rules.mk
+
+#
+# End of ALL
+##############################################################################
+
+##############################################################################
+# Start of (Raspberry Pi Zero)-specific build targets
+#
+
+MAKE_ALL_RULE_HOOK: sdcard-final-contents/$(PROJECT).img
+
+sdcard-final-contents: $(BUILDDIR)/$(PROJECT).bin $(LDSCRIPT)
+ifeq ($(USE_VERBOSE_COMPILE),yes)
+	mkdir -p $(BUILDDIR)/sdcard-final-contents
+	cp -a sdcard-boilerplate/* $(BUILDDIR)/sdcard-final-contents
+else
+	@echo "Creating $(BUILDDIR)/sdcard-final-contents (directory)"
+	@mkdir -p $(BUILDDIR)/sdcard-final-contents
+	@cp -a sdcard-boilerplate/* $(BUILDDIR)/sdcard-final-contents
+endif
+
+
+sdcard-final-contents/$(PROJECT).img: sdcard-final-contents $(BUILDDIR)/$(PROJECT).bin $(LDSCRIPT)
+ifeq ($(USE_VERBOSE_COMPILE),yes)
+	cp $(BUILDDIR)/$(PROJECT).bin $(BUILDDIR)/sdcard-final-contents/$(PROJECT).img
+else
+	@echo Copying $(BUILDDIR)/$(PROJECT).bin to $(BUILDDIR)/sdcard-final-contents/$(PROJECT).img
+	@cp $(BUILDDIR)/$(PROJECT).bin $(BUILDDIR)/sdcard-final-contents/$(PROJECT).img
+endif
+
+#
+# End of (Raspberry Pi Zero)-specific build targets
+##############################################################################
+

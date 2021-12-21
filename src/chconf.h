@@ -529,7 +529,42 @@
 /* Port-specific settings (override port settings defaulted in chcore.h).    */
 /*===========================================================================*/
 
-#define CHPRINTF_USE_FLOAT 1
+// I have turned off printf support for floating point.
+//
+// Rationale:
+//
+// tl;dr: Turn it off MOSTLY because we just don't need it,
+// but also for portability+compatibility and future-proofing.
+//
+// Long version:
+//
+// As we're starting this project with a RPi Zero with ~512MB RAM
+// and 8+GB of SDCard Flash memory, we aren't necessarily doing this to
+// save space on the RPi Zero. It'll fit.
+//
+// However, that might not be true on all platforms.
+//
+// If this turns out to generate code small enough to be used on other
+// CPUs/MCUs (hah, probably not, but w/e), then this project might get reused.
+// At that point, adding code complexity for floating point becomes a liability.
+//
+// I don't actually foresee any need for floating point. Like, at all.
+// The calculations performed by this thing are on largely linear quantities
+// and anything with logarithmic/exponential nature will probably be measured
+// by sensors that normalize/linearize that into 8-to-32-bit integers so that
+// it's all easily transmitted over I2C/SPI/etc and interpreted on much
+// cheaper MCUs than what we're using here. So it probably just won't come up.
+//
+// I could be wrong. If you need floating point, try it out. Maybe in the
+// future there will be better CPU/MCU offerings and allowing floating point
+// will be a trivial matter. That'd be nice.
+//
+// But here in the past, I don't want to make assumptions.
+//
+// -- Chad Joan, 2021-11-01
+//
+//#define CHPRINTF_USE_FLOAT 1
+#define CHPRINTF_USE_FLOAT 0
 
 #endif  /* _CHCONF_H_ */
 

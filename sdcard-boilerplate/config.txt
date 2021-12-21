@@ -1,0 +1,168 @@
+# Determines how much memory the GPU can access.
+# "The minimum value is 16, however this disables certain GPU features."
+# We aren't using the GPU at all (except for booting, and only because the
+# BCM2835 requires the GPU for its boot sequence), so this value is minimized.
+gpu_mem=16
+
+# Explicitly state that composite TV output is disabled.
+# This supposedly only matters for Pi4 and Model B (and later?).
+# The Zero will probably still produce composite output, and there's nothing
+# we can do about it. *shrug* oh well.
+# At the very least, we're documenting+signalling our intent.
+enable_tvout=0
+
+# "The hdmi_blanking command controls what happens when the operating system
+# asks for the display to be put into standby mode, using DPMS, to save power."
+# Either 0 or 1:
+#   0 = HDMI output will be blanked;
+#   1 = HDMI output will be switched off and blanked
+#
+# We aren't using the GPU, so set it to 1 to save a little bit of power.
+#
+hdmi_blanking=1
+
+# This makes `hdmi_mode` refer to the CEA list.
+hdmi_group=1
+
+# Use the "custom" hdmi_mode from the CEA mode list.
+hdmi_mode=65
+
+# Set to 1 to prevent HDMI outputs from detecting a new device
+# (and channel switching) when this system boots.
+#
+# Channel switching is kind of bad civ even when you're a normal HDMI device,
+# so channel switching to something that doesn't even have a display would
+# be terrible civ. Thus, we set this to 1 in some vague hopes that we
+# won't inconvenience someone someday.
+#
+hdmi_ignore_cec_init=1
+
+# Set to 1 to present as if all HDMI sound formats are unsupported.
+# (We aren't using GPU/HDMI, so there's no point in having audio on it.)
+hdmi_ignore_edid_audio=1
+
+# Forces the EDID content type to a specific value.
+# The options are:
+#   0 = EDID_ContentType_NODATA, content type none.
+#   1 = EDID_ContentType_Graphics, content type graphics, ITC must be set to 1
+#   2 = EDID_ContentType_Photo, content type photo
+#   3 = EDID_ContentType_Cinema, content type cinema
+#   4 = EDID_ContentType_Game, content type game
+edid_content_type=0
+
+# Either 1 or 2:
+#   1 = DVI mode (no sound);
+#   2 = HDMI mode (sound)
+#
+# (Same as with `hdmi_ignore_edid_audio`)
+hdmi_drive=1
+
+# "Setting hdmi_ignore_hotplug to 1 pretends that the HDMI hotplug signal
+# is not asserted, so it appears that a HDMI display is not attached.
+# In other words, composite output mode will be used, even if an HDMI monitor is detected."
+hdmi_ignore_hotplug=1
+
+# "By default the Raspberry Pi LCD display is used when it is detected on the I2C bus.
+# ignore_lcd=1 will skip this detection phase, and therefore the LCD display will not be used."
+ignore_lcd=1
+
+# "disable_touchscreen=1 will disable the touchscreen on the official Raspberry Pi LCD display."
+disable_touchscreen=1
+
+# "By default, the firmware parses the EDID of any HDMI attached display, picks
+# an appropriate video mode, then passes the resolution and frame rate of the mode,
+# along with overscan parameters, to the Linux kernel via settings on the kernel
+# command line. In rare circumstances, this can have the effect of choosing a mode
+# that is not in the EDID, and may be incompatible with the device. You can use
+# `disable_fw_kms_setup=1` to disable the passing of these parameters and avoid
+# this problem. The Linux video mode system (KMS) will then parse the EDID itself
+# and pick an appropriate mode."
+#
+# We aren't using Linux OR HDMI, so we'd rather not have it try to pass Linux
+# kernel command line options to our executable. *shrug*
+#
+disable_fw_kms_setup=1
+
+# "Set the disable_commandline_tags command to 1 to stop start.elf from filling
+# in ATAGS (memory from 0x100) before launching the kernel."
+#
+# Like with `disable_fw_kms_setup`, we aren't a Linux kernel, so please don't.
+#
+# ... or, that's what I was thinking until I discovered that setting this to 1
+# causes boot to fail on my device. (Chad Joan, RPi Zero, 2021-10-12)
+#
+# disable_commandline_tags=1
+
+# "The `boot_delay` command instructs to wait for a given number of seconds in
+# start.elf before loading the kernel: the default value is 1. The total delay
+# in milliseconds is calculated as (1000 x boot_delay) + boot_delay_ms.
+# This can be useful if your SD card needs a while to get ready before Linux is
+# able to boot from it."
+#
+# We aren't using Linux and we GOTTA GO FAST. (Well not really, but may as well.)
+# Also, it is unclear why an SD card would need a while to "get ready" when
+# the CPU has already read the `config.txt` file from it. Maybe the kernel
+# needs to init a filesystem driver for interacting with the FAT32 filesystem?
+# Again, it's not clear, but we probably don't need the time, because we aren't
+# doing anything with it. So we set it to 0 instead of the default of 1.
+#
+boot_delay=0
+
+# Use `dtoverlay=disable-bt` so that we can use `uart_2ndstage=1`.
+# Use `dtoverlay=disable-wifi` for security reasons on the RPi Zero W.
+#
+# (I'm still not sure if this is supposed to be used by the proprietary
+# bootloader, by the Linux kernel, or both. If it's just for the Linux kernel,
+# then this step is pointless, because we aren't Linux. But just to be safe,
+# we may as well tell the bootloader our intentions.)
+#
+# This all assumes that `/overlays/disable-bt.dtbo` and `/overlays/disable-wifi.dtbo`
+# are present on the SDCard.
+#
+dtoverlay=disable-bt,disable-wifi
+
+# Seems necessary for Serial/UART to work?
+enable_uart=1
+
+# Default UART settings.
+init_uart_clock=48000000
+init_uart_baud=115200
+
+# Choose a lower baud-rate to provide better noise-resistance.
+# Except... so far, it isn't working for `uart_2ndstage` messages. (Chad Joan, RPi Zero, 2021-10-12)
+#init_uart_baud=9600
+
+# Ensure that GPIO14 and GPIO15 are handling UART0
+gpio=14,15=a0
+
+# # Ensure that GPIO14 and GPIO15 are handling UART1
+# gpio=14,15=a5
+
+# "Setting uart_2ndstage=1 causes the second-stage loader (bootcode.bin on
+# devices prior to the Raspberry Pi 4, or the boot code in the EEPROM for
+# Raspberry Pi 4 devices) and the main firmware (start*.elf) to output
+# diagnostic information to UART0.
+#
+# Be aware that output is likely to interfere with Bluetooth operation unless
+# it is disabled (dtoverlay=disable-bt) or switched to the other UART
+# (dtoverlay=miniuart-bt), and if the UART is accessed simultaneously to output
+# from Linux then data loss can occur leading to corrupted output. This feature
+# should only be required when trying to diagnose an early boot loading problem."
+#
+# We like diagnostic information and we are not using bluetooth.
+# Seems like it's not a trade-off for us. May as well turn it on forever.
+#
+uart_2ndstage=1
+
+# "If disable_splash is set to 1, the rainbow splash screen will not be shown on boot. The default value is 0."
+#
+# We aren't using HDMI or video, so we disable this to avoid doing unnecessary things.
+#
+disable_splash=1
+
+# Proprietary bootcode.
+start_file=start.elf
+fixup_file=fixup_rc.dat
+
+# Our own special sauce.
+kernel=kernel.img
