@@ -33,6 +33,10 @@ ifeq ($(USE_VERBOSE_COMPILE),)
   USE_VERBOSE_COMPILE = no
 endif
 
+ifneq ($(EXTENDED_SHELL),no)
+  EXTENDED_SHELL = yes
+endif
+
 #
 # Build global options
 ##############################################################################
