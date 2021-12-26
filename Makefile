@@ -49,7 +49,7 @@ endif
 PROJECT = kernel
 
 # Imported source files and paths
-CHIBIOS = ChibiOS-RPi
+CHIBIOS = depends/ChibiOS-RPi
 include $(CHIBIOS)/boards/RASPBERRYPI_MODB/board.mk
 include $(CHIBIOS)/os/hal/platforms/BCM2835/platform.mk
 include $(CHIBIOS)/os/hal/hal.mk
