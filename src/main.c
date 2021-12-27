@@ -28,83 +28,6 @@
 
 static BaseSequentialStream *bss;
 
-// -------------------------------------------------------------------------- //
-// LEET BCM2835 HAX GO HERE
-// (Ugh but really, someday I hope that either myself or someone else reports
-// and/or fixes the corresponding bugs in upstream.)
-
-
-
-// This is a copy-paste of the i2c_lld_start function in `ChibiOS-RPi/os/hal/platforms/BCM2835/i2c_lld.c`
-// except the correct GPIOX_PAD numbers are used here.
-// (The original function uses pins (pads) 0 and 1, but those are not exposed
-// on the Raspberry Pi Zero: only pins 2 and 3 are exposed! The function seems
-// OK otherwise, but using the incorrect pins was very problematic.)
-static void hax_i2c_lld_start(I2CDriver *i2cp) {
-  /* Set up GPIO pins for I2C */
-  bcm2835_gpio_fnsel(GPIO2_PAD, GPFN_ALT0);
-  bcm2835_gpio_fnsel(GPIO3_PAD, GPFN_ALT0);
-
-  uint32_t speed = i2cp->config->ic_speed;
-  if (speed != 0 && speed != 100000)
-    i2cp->device->clockDivider = BSC_CLOCK_FREQ / i2cp->config->ic_speed;
-
-  i2cp->device->control |= BSC_I2CEN;
-}
-
-static void hax_i2cStart(I2CDriver *i2cp, const I2CConfig *config) {
-
-  chDbgCheck((i2cp != NULL) && (config != NULL), "i2cStart");
-  chDbgAssert((i2cp->state == I2C_STOP) || (i2cp->state == I2C_READY) ||
-              (i2cp->state == I2C_LOCKED),
-              "i2cStart(), #1",
-              "invalid state");
-
-  chSysLock();
-  i2cp->config = config;
-  hax_i2c_lld_start(i2cp);
-  i2cp->state = I2C_READY;
-  chSysUnlock();
-}
-
-
-// This is a copy-paste of the i2c_lld_stop function in `ChibiOS-RPi/os/hal/platforms/BCM2835/i2c_lld.c`
-// except the correct GPIOX_PAD numbers are used here.
-// (The original function uses pins (pads) 0 and 1, but those are not exposed
-// on the Raspberry Pi Zero: only pins 2 and 3 are exposed! The function seems
-// OK otherwise, but using the incorrect pins was very problematic.)
-static void hax_i2c_lld_stop(I2CDriver *i2cp) {
-  /* Set GPIO pin function to default */
-  bcm2835_gpio_fnsel(GPIO2_PAD, GPFN_IN);
-  bcm2835_gpio_fnsel(GPIO3_PAD, GPFN_IN);
-
-  i2cp->device->control &= ~BSC_I2CEN;
-}
-
-
-static void hax_i2cStop(I2CDriver *i2cp) {
-
-  chDbgCheck(i2cp != NULL, "i2cStop");
-  chDbgAssert((i2cp->state == I2C_STOP) || (i2cp->state == I2C_READY) ||
-              (i2cp->state == I2C_LOCKED),
-              "i2cStop(), #1",
-              "invalid state");
-
-  chSysLock();
-  hax_i2c_lld_stop(i2cp);
-  i2cp->state = I2C_STOP;
-  chSysUnlock();
-}
-
-
-static void hax_i2c_lld_init(void) {
-  I2C0.device = BSC1_ADDR;
-  i2cObjectInit(&I2C0);
-}
-// -------------------------------------------------------------------------- //
-
-
-
 #ifdef EXTENDED_SHELL
 
 #define TEST_WA_SIZE        THD_WA_SIZE(4096)
@@ -318,11 +241,11 @@ static msg_t Thread2(void *p) {
 	}
 	return 0;
 #endif
-	
+
+	I2CDriver  *i2c_driver = &I2CD;
 	I2CConfig  i2c_config;
 	i2c_config.ic_speed = 1500;
-	//i2cStart(&I2C0, &i2c_config);
-	hax_i2cStart(&I2C0, &i2c_config);
+	i2cStart(i2c_driver, &i2c_config);
 
 	while (TRUE) {
 		size_t  fail_count_before = i2c_fail_count;
@@ -333,13 +256,13 @@ static msg_t Thread2(void *p) {
 		// Send the RESET command to initialize the sensor.
 		txbuf[0] = 0x1E; // RESET
 		txbuf[1] = 0x00;
-		//i2cStart(&I2C0, &i2c_config);
+		//i2cStart(i2c_driver, &i2c_config);
 		stat = i2cMasterTransmit(
-			&I2C0, TE_PRESSURE_TEMP_I2C_ADDR,
+			i2c_driver, TE_PRESSURE_TEMP_I2C_ADDR,
 			txbuf, 1, rxbuf, 0);
-		//i2cStop(&I2C0);
+		//i2cStop(i2c_driver);
 
-		if ( handle_i2c_errors(&I2C0, stat, 'T') ) {
+		if ( handle_i2c_errors(i2c_driver, stat, 'T') ) {
 			chThdSleepMilliseconds(1000);
 			i2c_tx_count++;
 			continue;
@@ -353,26 +276,26 @@ static msg_t Thread2(void *p) {
 		{
 			txbuf[0] = 0xA0 + prom_offset_idx;
 			txbuf[1] = 0x00;
-			//i2cStart(&I2C0, &i2c_config);
+			//i2cStart(i2c_driver, &i2c_config);
 			stat = i2cMasterTransmit(
-				&I2C0, TE_PRESSURE_TEMP_I2C_ADDR,
+				i2c_driver, TE_PRESSURE_TEMP_I2C_ADDR,
 				txbuf, 1, rxbuf, 0);
-			//i2cStop(&I2C0);
+			//i2cStop(i2c_driver);
 
 			// TODO: Should probably branch here, but not sure what to branch to.
-			(void)handle_i2c_errors(&I2C0, stat, 'T');
+			(void)handle_i2c_errors(i2c_driver, stat, 'T');
 			i2c_tx_count++;
 
 			rxbuf[prom_offset_idx+0] = 0x00;
 			rxbuf[prom_offset_idx+1] = 0x00;
-			//i2cStart(&I2C0, &i2c_config);
+			//i2cStart(i2c_driver, &i2c_config);
 			stat = i2cMasterReceive(
-				&I2C0, TE_PRESSURE_TEMP_I2C_ADDR,
+				i2c_driver, TE_PRESSURE_TEMP_I2C_ADDR,
 				rxbuf + prom_offset_idx, 2);
-			//i2cStop(&I2C0);
+			//i2cStop(i2c_driver);
 
 			// TODO: Should probably branch here, but not sure what to branch to.
-			(void)handle_i2c_errors(&I2C0, stat, 'R');
+			(void)handle_i2c_errors(i2c_driver, stat, 'R');
 			i2c_rx_count++;
 		}
 		rxbuf[prom_offset_idx] = 0x00;
@@ -391,7 +314,7 @@ static msg_t Thread2(void *p) {
 
 		chThdSleepMilliseconds(1000);
 	}
-	hax_i2cStop(&I2C0);
+	i2cStop(i2c_driver);
 	return 0;
 }
 
@@ -421,9 +344,6 @@ int main(void) {
 
 	// Set mode of onboard LED
 	palSetPadMode(ONBOARD_LED_PORT, ONBOARD_LED_PAD, PAL_MODE_OUTPUT);
-
-	// OH GOD WHY DID THIS WORK
-	hax_i2c_lld_init();
 
 	// Creates the blinker thread.
 	chThdCreateStatic(waThread1, sizeof(waThread1), NORMALPRIO, Thread1, NULL);

@@ -50,7 +50,8 @@ PROJECT = kernel
 
 # Imported source files and paths
 CHIBIOS = depends/ChibiOS-RPi
-include $(CHIBIOS)/boards/RASPBERRYPI_MODB/board.mk
+#include $(CHIBIOS)/boards/RASPBERRYPI_MODB/board.mk
+include $(CHIBIOS)/boards/RP_ZERO/board.mk
 include $(CHIBIOS)/os/hal/platforms/BCM2835/platform.mk
 include $(CHIBIOS)/os/hal/hal.mk
 include $(CHIBIOS)/os/ports/GCC/ARM/BCM2835/port.mk
