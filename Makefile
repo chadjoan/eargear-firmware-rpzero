@@ -5,7 +5,21 @@
 
 # Compiler options here.
 ifeq ($(USE_OPT),)
-  USE_OPT = -O2 -ggdb -fomit-frame-pointer 
+  USE_OPT = -O2 -ggdb -fomit-frame-pointer \
+    -march=armv6k -mfpu=vfp -mfloat-abi=soft
+# NOTE: The "-march=armv6k -mfpu=vfp -mfloat-abi=soft" options are because
+#   I had to disable hardware floating point because ChibiOS would not boot
+#   with it AND floating-point-chprintf enabled at the same time. And as of
+#   the most recent build, floating-point-chprintf was important as
+#   a convenient way to print the output of the MS8607's (mostly unmodified)
+#   driver. It might not be too hard to remove all floating point calculations
+#   from the driver and thus render floating point calculations 100%
+#   unnecessary again, and I probably will (but just to avoid the class
+#   of floating-point errors and failure modes), but disabling floating-point
+#   chprintf is starting to sound like a poor idea. Then again, the failure
+#   mode for that isn't very bad... it's the failure mode for
+#   hard-float-with-chprintf-float-simultaneously that's _really_ bad.
+#   -- Chad Joan, 2022-01-02
 endif
 
 # C specific options here (added to USE_OPT).
@@ -71,6 +85,7 @@ CSRC = $(PORTSRC) \
        $(BOARDSRC) \
        ${CHIBIOS}/os/various/shell.c \
        ${CHIBIOS}/os/various/chprintf.c \
+       depends/drivers/MS8607/ms8607.c \
        src/main.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
@@ -103,7 +118,8 @@ ASMSRC = $(PORTASM)
 INCDIR = src \
          $(PORTINC) $(KERNINC) $(TESTINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) \
-         $(CHIBIOS)/os/various
+         $(CHIBIOS)/os/various \
+         depends/drivers/MS8607
 
 #
 # Project, sources and paths

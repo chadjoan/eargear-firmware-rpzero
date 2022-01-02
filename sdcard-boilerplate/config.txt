@@ -138,6 +138,15 @@ gpio=14,15=a0
 # # Ensure that GPIO14 and GPIO15 are handling UART1
 # gpio=14,15=a5
 
+# Allow pins 22-27 to be used for JTAG-based debugging (GDB via OpenOCD via JTAG).
+# (As of 2022-01-01, this doesn't seem to work. I suspect I need a working
+# OpenOCD config for the bcm2835, and I don't have that, either that or the
+# one-or-two success stories about the bcm2835 are misunderstandings and the
+# darn thing just can't be debugged.
+# https://stackoverflow.com/a/37125029/1261963 )
+#enable_jtag_gpio=1
+#gpio=22-27=a4
+
 # "Setting uart_2ndstage=1 causes the second-stage loader (bootcode.bin on
 # devices prior to the Raspberry Pi 4, or the boot code in the EEPROM for
 # Raspberry Pi 4 devices) and the main firmware (start*.elf) to output

@@ -13,7 +13,7 @@
 #include "ms8607.h"
 
  /**
-  * The header "i2c.h" has to be implemented for your own platform to 
+  * The header "ms8607_i2c.h" has to be implemented for your own platform to 
   * conform the following protocol :
   *
   * enum i2c_transfer_direction {
@@ -41,7 +41,75 @@
   * enum status_code i2c_master_write_packet_wait(struct i2c_master_packet *const packet);
   * enum status_code i2c_master_write_packet_wait_no_stop(struct i2c_master_packet *const packet);
   */
-#include "i2c.h"
+//#include "ms8607_i2c.h"
+
+#include "ch.h"
+#include "hal.h"
+#include "chprintf.h"
+
+enum i2c_transfer_direction {
+	I2C_TRANSFER_WRITE = 0,
+	I2C_TRANSFER_READ  = 1,
+};
+
+enum status_code {
+	STATUS_OK           = 0x00,
+	STATUS_ERR_OVERFLOW	= 0x01,
+	STATUS_ERR_TIMEOUT  = 0x02,
+};
+
+struct i2c_master_packet {
+	// Address to slave device
+	uint16_t address;
+	// Length of data array
+	uint16_t data_length;
+	// Data array containing all data to be transferred
+	uint8_t *data;
+};
+
+uint8_t  handle_i2c_errors(I2CDriver *driver,  msg_t  stat,  char T_or_R);
+
+//void i2c_master_init(void);
+enum status_code i2c_master_read_packet_wait(struct i2c_master_packet *const packet)
+{
+	msg_t  stat = i2cMasterReceive(
+		&I2CD, packet->address,
+		packet->data, packet->data_length);
+
+	if ( handle_i2c_errors(&I2CD, stat, 'R') )
+		return STATUS_ERR_TIMEOUT;
+	else
+		return STATUS_OK;
+}
+
+enum status_code i2c_master_write_packet_wait(struct i2c_master_packet *const packet)
+{
+	msg_t   stat;
+	uint8_t rxbuf[1];
+
+	stat = i2cMasterTransmit(
+		&I2CD, packet->address,
+		packet->data, packet->data_length, rxbuf, 0);
+
+	if ( handle_i2c_errors(&I2CD, stat, 'T') )
+		return STATUS_ERR_TIMEOUT;
+	else
+		return STATUS_OK;
+}
+
+enum status_code i2c_master_write_packet_wait_no_stop(struct i2c_master_packet *const packet)
+{
+	(void)packet;
+	chprintf((BaseSequentialStream *)&SD1,
+		"ERROR: Attempt to call unimplemented function `i2c_master_write_packet_wait_no_stop`.\n");
+	return STATUS_ERR_TIMEOUT;
+}
+
+void delay_ms(uint32_t ms)
+{
+	chThdSleepMilliseconds(ms);
+}
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -193,7 +261,7 @@ void ms8607_init(void)
 	psensor_resolution_osr = ms8607_pressure_resolution_osr_8192;
 	
 	/* Initialize and enable device with config. */
-	i2c_master_init();
+	//i2c_master_init();
 }
 
 /**
@@ -243,6 +311,8 @@ enum ms8607_status  ms8607_reset(void)
  */
 enum ms8607_status ms8607_set_humidity_resolution(enum ms8607_humidity_resolution res)
 {
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607: ENTERING ms8607_set_humidity_resolution()\n");
 	enum ms8607_status status;
 	uint8_t reg_value, tmp=0;
 	uint32_t conversion_time = HSENSOR_CONVERSION_TIME_12b;
@@ -263,7 +333,9 @@ enum ms8607_status ms8607_set_humidity_resolution(enum ms8607_humidity_resolutio
 		tmp = HSENSOR_USER_REG_RESOLUTION_11b;
 		conversion_time = HSENSOR_CONVERSION_TIME_11b;
 	}
-		
+
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:   hsensor_read_user_register(&reg_value);\n");
 	status = hsensor_read_user_register(&reg_value);
 	if( status != ms8607_status_ok )
 		return status;
@@ -273,12 +345,17 @@ enum ms8607_status ms8607_set_humidity_resolution(enum ms8607_humidity_resolutio
 	reg_value |= tmp & HSENSOR_USER_REG_RESOLUTION_MASK;
 	
 	hsensor_conversion_time = conversion_time;
-	
+
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:   hsensor_write_user_register(reg_value);\n");
 	status = hsensor_write_user_register(reg_value);
 	
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607: LEAVING ms8607_set_humidity_resolution()\n");
 	return status;
 }
 
+// TODO: documentation shows return value, but it returns `void`
 /**
  * \brief Set Humidity sensor ADC resolution.
  *
@@ -307,7 +384,12 @@ void ms8607_set_humidity_i2c_master_mode(enum ms8607_humidity_i2c_master_mode mo
  *       - ms8607_status_crc_error : CRC check error
  */
 enum ms8607_status ms8607_read_temperature_pressure_humidity( float *t, float *p, float *h)
-{
+{/*
+	*t = 0.0;
+	*p = 0.0;
+	*h = 0.0;
+	return ms8607_status_ok;
+	*/
 	enum ms8607_status status;
 	
 	status = psensor_read_pressure_and_temperature(t,p);
@@ -360,6 +442,8 @@ enum ms8607_status ms8607_get_battery_status(enum ms8607_battery_status *bat)
  */
 enum ms8607_status ms8607_enable_heater(void)
 {
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607: ENTERING ms8607_enable_heater()\n");
 	enum ms8607_status status;
 	uint8_t reg_value;
 	
@@ -373,6 +457,8 @@ enum ms8607_status ms8607_enable_heater(void)
 	
 	status = hsensor_write_user_register(reg_value);
 
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607: LEAVING ms8607_enable_heater()\n");
 	return status;
 }
 
@@ -386,6 +472,8 @@ enum ms8607_status ms8607_enable_heater(void)
  */
 enum ms8607_status ms8607_disable_heater(void)
 {
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607: ENTERING ms8607_disable_heater()\n");
 	enum ms8607_status status;
 	uint8_t reg_value;
 	
@@ -399,6 +487,8 @@ enum ms8607_status ms8607_disable_heater(void)
 	
 	status = hsensor_write_user_register(reg_value);
 
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607: LEAVING ms8607_disable_heater()\n");
 	return status;
 }
 
@@ -492,6 +582,8 @@ enum ms8607_status  hsensor_reset(void)
  */
 enum ms8607_status hsensor_write_command( uint8_t cmd)
 {
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:     ENTERING hsensor_write_command(%02X);\n", cmd);
 	enum status_code i2c_status;
 	uint8_t data[1];
 		
@@ -503,12 +595,16 @@ enum ms8607_status hsensor_write_command( uint8_t cmd)
 		.data        = data,
 	};
 	/* Do the transfer */
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:       i2c_master_write_packet_wait(&transfer);\n");
 	i2c_status = i2c_master_write_packet_wait(&transfer);
 	if( i2c_status == STATUS_ERR_OVERFLOW )
 		return ms8607_status_no_i2c_acknowledge;
 	if( i2c_status != STATUS_OK)
 		return ms8607_status_i2c_transfer_error;
 	
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:     LEAVING hsensor_write_command();\n");
 	return ms8607_status_ok;
 }
 
@@ -592,6 +688,8 @@ enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
  */
 enum ms8607_status hsensor_read_user_register(uint8_t *value)
 {
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:   ENTERING hsensor_read_user_register(*);\n");
 	enum ms8607_status status;
 	enum status_code i2c_status;
 	uint8_t buffer[1];
@@ -605,10 +703,14 @@ enum ms8607_status hsensor_read_user_register(uint8_t *value)
 	};
 	
 	// Send the Read Register Command
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:     hsensor_write_command(HSENSOR_READ_USER_REG_COMMAND);\n");
 	status = hsensor_write_command(HSENSOR_READ_USER_REG_COMMAND);
 	if( status != ms8607_status_ok )
 		return status;
 	
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:     i2c_master_read_packet_wait(&read_transfer);\n");
 	i2c_status = i2c_master_read_packet_wait(&read_transfer);
 	if( i2c_status == STATUS_ERR_OVERFLOW )
 		return ms8607_status_no_i2c_acknowledge;
@@ -617,6 +719,8 @@ enum ms8607_status hsensor_read_user_register(uint8_t *value)
 
 	*value = buffer[0];
 	
+	chprintf((BaseSequentialStream *)&SD1,
+		"Driver.MS8607:   LEAVING hsensor_read_user_register(*);\n");
 	return ms8607_status_ok;
 }
 
@@ -925,8 +1029,8 @@ enum ms8607_status psensor_read_eeprom_coeff(uint8_t command, uint16_t *coeff)
 		
 	*coeff = (buffer[0] << 8) | buffer[1];
     
-    if (*coeff == 0)
-        return ms8607_status_i2c_transfer_error;
+	if (*coeff == 0)
+		return ms8607_status_i2c_transfer_error;
 	
 	return ms8607_status_ok;	
 }
@@ -1050,8 +1154,8 @@ enum ms8607_status psensor_read_pressure_and_temperature( float *temperature, fl
 	if( status != ms8607_status_ok)
 		return status;
     
-    if (adc_temperature == 0 || adc_pressure == 0)
-        return ms8607_status_i2c_transfer_error;
+	if (adc_temperature == 0 || adc_pressure == 0)
+		return ms8607_status_i2c_transfer_error;
 
 	// Difference between actual and reference temperature = D2 - Tref
 	dT = (int32_t)adc_temperature - ( (int32_t)eeprom_coeff[REFERENCE_TEMPERATURE_INDEX] <<8 );

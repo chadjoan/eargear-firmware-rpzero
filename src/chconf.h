@@ -564,7 +564,8 @@
 // -- Chad Joan, 2021-11-01
 //
 //#define CHPRINTF_USE_FLOAT 1
-#define CHPRINTF_USE_FLOAT 0
+//#define CHPRINTF_USE_FLOAT 0
+#define CHPRINTF_USE_FLOAT 1
 
 #endif  /* _CHCONF_H_ */
 
