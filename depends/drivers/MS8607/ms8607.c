@@ -186,7 +186,9 @@ static bool psensor_crc_check (uint16_t *n_prom, uint8_t crc);
 enum ms8607_status psensor_read_pressure_and_temperature(void *caller_context, float *, float *);
 
 /**
- * \brief Configures the SERCOM I2C master to be used with the ms8607 device.
+ * \brief Configures the caller's I2C controller to be used with the MS8607 device.
+ *
+ * \param[in] ms8607_dependencies : Struct with callbacks that implement I2C controller functions.
  */
 void ms8607_init(const ms8607_dependencies* deps)
 {
@@ -202,6 +204,11 @@ void ms8607_init(const ms8607_dependencies* deps)
 /**
  * \brief Check whether MS8607 device is connected
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
+ *
  * \return bool : status of MS8607
  *       - true : Device is present
  *       - false : Device is not acknowledging I2C address
@@ -214,10 +221,14 @@ bool ms8607_is_connected(void* caller_context)
 /**
  * \brief Reset the MS8607 device
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
+ *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status  ms8607_reset(void* caller_context)
 {
@@ -236,13 +247,15 @@ enum ms8607_status  ms8607_reset(void* caller_context)
 /**
  * \brief Set humidity ADC resolution.
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
  * \param[in] ms8607_humidity_resolution : Resolution requested
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
- *       - ms8607_status_crc_error : CRC check error
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status ms8607_set_humidity_resolution(void *caller_context, enum ms8607_humidity_resolution res)
 {
@@ -298,15 +311,20 @@ void ms8607_set_humidity_i2c_master_mode(enum ms8607_humidity_i2c_master_mode mo
 /**
  * \brief Reads the temperature, pressure and relative humidity value.
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
  * \param[out] float* : degC temperature value
  * \param[out] float* : mbar pressure value
  * \param[out] float* : %RH Relative Humidity value
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
- *       - ms8607_status_crc_error : CRC check error
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
+ *       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+ *       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
+ *       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
  */
 enum ms8607_status ms8607_read_temperature_pressure_humidity(void* caller_context, float *t, float *p, float *h)
 {
@@ -332,8 +350,7 @@ enum ms8607_status ms8607_read_temperature_pressure_humidity(void* caller_contex
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status ms8607_get_battery_status(void *caller_context, enum ms8607_battery_status *bat)
 {
@@ -355,10 +372,14 @@ enum ms8607_status ms8607_get_battery_status(void *caller_context, enum ms8607_b
 /**
  * \brief Enable heater
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
+ *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status ms8607_enable_heater(void* caller_context)
 {
@@ -379,10 +400,14 @@ enum ms8607_status ms8607_enable_heater(void* caller_context)
 /**
  * \brief Disable heater
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
+ *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status ms8607_disable_heater(void* caller_context)
 {
@@ -403,14 +428,17 @@ enum ms8607_status ms8607_disable_heater(void* caller_context)
 /**
  * \brief Get heater status
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
  * \param[in] ms8607_heater_status* : Return heater status (above or below 2.5V)
  *	                    - ms8607_heater_off,
  *                      - ms8607_heater_on
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status ms8607_get_heater_status(void* caller_context, enum ms8607_heater_status *heater)
 {
@@ -461,8 +489,7 @@ bool hsensor_is_connected(void* caller_context)
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status  hsensor_reset(void* caller_context)
 {
@@ -485,12 +512,10 @@ enum ms8607_status  hsensor_reset(void* caller_context)
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status hsensor_write_command(void *caller_context, uint8_t cmd)
 {
-	enum ms8607_status status;
 	uint8_t data[1];
 
 	data[0] = cmd;
@@ -502,11 +527,7 @@ enum ms8607_status hsensor_write_command(void *caller_context, uint8_t cmd)
 	};
 
 	/* Do the transfer */
-	status = depends.i2c_controller_write_packet(caller_context, &transfer);
-	if ( status != ms8607_status_ok )
-		return status;
-
-	return ms8607_status_ok;
+	return depends.i2c_controller_write_packet(caller_context, &transfer);
 }
 
 /**
@@ -517,8 +538,7 @@ enum ms8607_status hsensor_write_command(void *caller_context, uint8_t cmd)
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status hsensor_write_command_no_stop(void *caller_context, uint8_t cmd)
 {
@@ -544,7 +564,7 @@ enum ms8607_status hsensor_write_command_no_stop(void *caller_context, uint8_t c
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : CRC check is OK
- *       - ms8607_status_crc_error : CRC check error
+ *       - ms8607_status_measurement_invalid : CRC check error
  */
 enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
 {
@@ -565,9 +585,9 @@ enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
 		polynom >>=1;
 	}
 	if( result == crc )
-		return 	ms8607_status_ok;
+		return ms8607_status_ok;
 	else
-		return ms8607_status_crc_error;
+		return ms8607_status_measurement_invalid;
 }
 
 /**
@@ -577,8 +597,7 @@ enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status hsensor_read_user_register(void *caller_context, uint8_t *value)
 {
@@ -615,8 +634,7 @@ enum ms8607_status hsensor_read_user_register(void *caller_context, uint8_t *val
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status hsensor_write_user_register(void *caller_context, uint8_t value)
 {
@@ -653,9 +671,8 @@ enum ms8607_status hsensor_write_user_register(void *caller_context, uint8_t val
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
- *       - ms8607_status_crc_error : CRC check error
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
+ *       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
  */
 enum ms8607_status hsensor_humidity_conversion_and_read_adc(void *caller_context, uint16_t *adc)
 {
@@ -693,7 +710,9 @@ enum ms8607_status hsensor_humidity_conversion_and_read_adc(void *caller_context
 	_adc = (buffer[0] << 8) | buffer[1];
 	crc = buffer[2];
 	
-	// compute CRC
+	// Compute CRC
+	// This is where we can get the `ms8607_status_measurement_invalid` error.
+	// Notably, this is not EEPROM/coefficient related. We're checking the CRC of the measurement itself.
 	status = hsensor_crc_check(_adc,crc);
 	if( status != ms8607_status_ok)
 		return status;
@@ -710,9 +729,8 @@ enum ms8607_status hsensor_humidity_conversion_and_read_adc(void *caller_context
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
- *       - ms8607_status_crc_error : CRC check error
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
+ *       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
  */
 enum ms8607_status hsensor_read_relative_humidity(void *caller_context, float *humidity)
 {
@@ -810,8 +828,7 @@ bool psensor_is_connected(void* caller_context)
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status  psensor_reset(void *caller_context)
 {
@@ -825,8 +842,7 @@ enum ms8607_status  psensor_reset(void *caller_context)
  *
  * \return ms8607_status : status of MS8607
  *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
  */
 enum ms8607_status psensor_write_command(void *caller_context, uint8_t cmd)
 {
@@ -858,14 +874,17 @@ void ms8607_set_pressure_resolution(enum ms8607_pressure_resolution res)
 /**
  * \brief Reads the psensor EEPROM coefficient stored at address provided.
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
  * \param[in] uint8_t : Address of coefficient in EEPROM
  * \param[out] uint16_t* : Value read in EEPROM
  *
  * \return ms8607_status : status of MS8607
- *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
- *       - ms8607_status_crc_error : CRC check error on the coefficients
+ *       - ms8607_status_ok : All operations completed successfully
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
+ *       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
  */
 enum ms8607_status psensor_read_eeprom_coeff(void *caller_context, uint8_t command, uint16_t *coeff)
 {
@@ -894,7 +913,7 @@ enum ms8607_status psensor_read_eeprom_coeff(void *caller_context, uint8_t comma
 	*coeff = (buffer[0] << 8) | buffer[1];
     
 	if (*coeff == 0)
-		return ms8607_status_i2c_transfer_error;
+		return ms8607_status_eeprom_is_zero;
 	
 	return ms8607_status_ok;	
 }
@@ -902,11 +921,16 @@ enum ms8607_status psensor_read_eeprom_coeff(void *caller_context, uint8_t comma
 /**
  * \brief Reads the ms8607 EEPROM coefficients to store them for computation.
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
+ *
  * \return ms8607_status : status of MS8607
- *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
- *       - ms8607_status_crc_error : CRC check error on the coefficients
+ *       - ms8607_status_ok : All operations completed successfully
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
+ *       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+ *       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
  */
 enum ms8607_status psensor_read_eeprom(void *caller_context)
 {
@@ -922,7 +946,7 @@ enum ms8607_status psensor_read_eeprom(void *caller_context)
 	}
 	
 	if( !psensor_crc_check( eeprom_coeff, (eeprom_coeff[CRC_INDEX] & 0xF000)>>12 ) )
-		return ms8607_status_crc_error;
+		return ms8607_status_eeprom_crc_error;
 	
 	psensor_coeff_read = true;
 	
@@ -932,13 +956,17 @@ enum ms8607_status psensor_read_eeprom(void *caller_context)
 /**
  * \brief Triggers conversion and read ADC value
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
  * \param[in] uint8_t : Command used for conversion (will determine Temperature vs Pressure and osr)
  * \param[out] uint32_t* : ADC value.
  *
  * \return ms8607_status : status of MS8607
- *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
+ *       - ms8607_status_ok : All operations completed successfully
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
+ *       - ms8607_status_measurement_invalid : I2C transfer(s) completed, but data received was invalid
  */
 static enum ms8607_status psensor_conversion_and_read_adc(void *caller_context, uint8_t cmd, uint32_t *adc)
 {
@@ -979,14 +1007,19 @@ static enum ms8607_status psensor_conversion_and_read_adc(void *caller_context, 
 /**
  * \brief Compute temperature and pressure
  *
+ * \param[in] void* caller_context : When this function calls any callbacks
+ *         (function pointers) from the `ms8607_dependencies` structure,
+ *         this will be passed directly to those callbacks' `caller_context`
+ *         parameter.
  * \param[out] float* : Celsius Degree temperature value
  * \param[out] float* : mbar pressure value
  *
  * \return ms8607_status : status of MS8607
- *       - ms8607_status_ok : I2C transfer completed successfully
- *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
- *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
- *       - ms8607_status_crc_error : CRC check error on the coefficients
+ *       - ms8607_status_ok : All operations completed successfully
+ *       - ms8607_status_error_within_callback : Error occurred within a ms8607_dependencies function
+ *       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+ *       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
+ *       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
  */
 enum ms8607_status psensor_read_pressure_and_temperature(void *caller_context, float *temperature, float *pressure)
 {
@@ -1017,7 +1050,7 @@ enum ms8607_status psensor_read_pressure_and_temperature(void *caller_context, f
 		return status;
 
 	if (adc_temperature == 0 || adc_pressure == 0)
-		return ms8607_status_i2c_transfer_error;
+		return ms8607_status_measurement_invalid;
 
 	// Difference between actual and reference temperature = D2 - Tref
 	dT = (int32_t)adc_temperature - ( (int32_t)eeprom_coeff[REFERENCE_TEMPERATURE_INDEX] <<8 );
@@ -1100,6 +1133,33 @@ bool psensor_crc_check (uint16_t *n_prom, uint8_t crc)
 	n_prom[0] = crc_read;
 	
 	return  ( n_rem == crc );
+}
+
+const char *ms8607_stringize_error(enum ms8607_status error_code)
+{
+	switch(error_code)
+	{
+		case ms8607_status_ok:
+			return "Status OK, success. (ms8607_status_ok)";
+
+		case ms8607_status_error_within_callback:
+			return "Error occurred within a function dispatched from the ms8607_dependencies structure. (ms8607_status_error_within_callback)";
+
+		case ms8607_status_eeprom_is_zero: // Formerly ms8607_status_crc_error
+			return "One or more EEPROM coefficients were received as 0, preventing measurement. (ms8607_status_eeprom_is_zero)";
+
+		case ms8607_status_eeprom_crc_error: // Formerly ms8607_status_crc_error
+			return "EEPROM coefficients retrieved from the MS8607 did not pass CRC check. (ms8607_status_eeprom_crc_error)";
+
+		case ms8607_status_measurement_invalid: // Formerly ms8607_status_i2c_transfer_error
+			return "EEPROM is OK and I2C transfer completed, but data received was invalid. (ms8607_status_measurement_invalid)";
+
+		case ms8607_status_heater_on_error:
+			return "Cannot compute compensated humidity because heater is on. (ms8607_status_heater_on_error)";
+
+		default: break;
+	}
+	return "Error code is not a valid ms8607_status.";
 }
 
 #ifdef __cplusplus

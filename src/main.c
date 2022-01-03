@@ -426,12 +426,19 @@ static msg_t Thread1(void *p)
 	i2c_config.ic_speed = 1500;
 	i2cStart(i2c_driver, &i2c_config);
 
+	enum ms8607_status  sensor_status;
+
 	chprintf(bss, "I2C.MS8607: (INFO)  Initializing MS8607 driver.\n");
 	chibi_ms8607_init();
 	palSetPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Resetting sensor.\n");
-	while ( ms8607_reset(i2c_driver) != ms8607_status_ok ) {
+	while ( true ) {
+		sensor_status = ms8607_reset(i2c_driver);
+		if ( sensor_status == ms8607_status_ok )
+			break;
+		if ( sensor_status != ms8607_status_error_within_callback )
+			chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 		chprintf(bss, "I2C.MS8607: (ERROR) Sensor reset failed.\n");
 		chThdSleepMilliseconds(1000);
 		chprintf(bss, "I2C.MS8607: (INFO)  Attempting another reset.\n");
@@ -439,7 +446,12 @@ static msg_t Thread1(void *p)
 	palSetPad(PROGRESS_LED_PORT_02, PROGRESS_LED_PAD_02);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Disabling heater.\n");
-	while ( ms8607_disable_heater(i2c_driver) != ms8607_status_ok ) {
+	while ( true ) {
+		sensor_status = ms8607_disable_heater(i2c_driver);
+		if ( sensor_status == ms8607_status_ok )
+			break;
+		if ( sensor_status != ms8607_status_error_within_callback )
+			chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 		chprintf(bss, "I2C.MS8607: (ERROR) Failed to disable heater.\n");
 		chThdSleepMilliseconds(1000);
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrying heater disable.\n");
@@ -471,9 +483,13 @@ static msg_t Thread1(void *p)
 	// to detect such things and provide such fallbacks.)
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Setting humidity resolution to 10b.\n");
-	while ( ms8607_set_humidity_resolution(i2c_driver, ms8607_humidity_resolution_10b)
-		!= ms8607_status_ok )
+	while ( true )
 	{
+		sensor_status = ms8607_set_humidity_resolution(i2c_driver, ms8607_humidity_resolution_10b);
+		if ( sensor_status == ms8607_status_ok )
+			break;
+		if ( sensor_status != ms8607_status_error_within_callback )
+			chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 		chprintf(bss, "I2C.MS8607: (ERROR) Failed to set humidity resolution.\n");
 		chThdSleepMilliseconds(1000);
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrying setting of humidity resolution to 10b.\n");
@@ -490,7 +506,6 @@ static msg_t Thread1(void *p)
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Humidity controller mode was set.\n");
 	while (TRUE) {
-		enum ms8607_status  sensor_stat;
 		float temperature = 0.0; // degC
 		float pressure    = 0.0; // mbar
 		float humidity    = 0.0; // %RH
@@ -499,16 +514,17 @@ static msg_t Thread1(void *p)
 		palClearPad(PROGRESS_LED_PORT_08, PROGRESS_LED_PAD_08);
 		palSetPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
 
+		chprintf(bss, "\n");
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrieving TPH (temperature-pressure-humidity) readings.\n");
-		sensor_stat = ms8607_read_temperature_pressure_humidity(
+		sensor_status = ms8607_read_temperature_pressure_humidity(
 				i2c_driver, &temperature, &pressure, &humidity);
-		if ( sensor_stat != ms8607_status_ok )
+		if ( sensor_status != ms8607_status_ok )
 		{
 			palClearPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
 			palSetPad(PROGRESS_LED_PORT_07, PROGRESS_LED_PAD_07);
+			if ( sensor_status != ms8607_status_error_within_callback )
+				chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 			chprintf(bss, "I2C.MS8607: (ERROR) Failed to read TPH data.\n");
-			if ( sensor_stat == ms8607_status_crc_error )
-				chprintf(bss, "I2C.MS8607: (ERROR) CRC Error.\n");
 		}
 		else
 		{
