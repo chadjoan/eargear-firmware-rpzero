@@ -12,51 +12,6 @@
 
 #include "ms8607.h"
 
-// TODO: Remove this now-incorrect documentation.
- /**
-  * The header "ms8607_i2c.h" has to be implemented for your own platform to 
-  * conform the following protocol :
-  *
-  * enum i2c_transfer_direction {
-  * 	I2C_TRANSFER_WRITE = 0,
-  * 	I2C_TRANSFER_READ  = 1,
-  * };
-  * 
-  * enum status_code {
-  * 	STATUS_OK           = 0x00,
-  * 	STATUS_ERR_OVERFLOW	= 0x01,
-  *		STATUS_ERR_TIMEOUT  = 0x02,
-  * };
-  * 
-  * struct i2c_master_packet {
-  * 	// Address to slave device
-  * 	uint16_t address;
-  * 	// Length of data array
-  * 	uint16_t data_length;
-  * 	// Data array containing all data to be transferred
-  * 	uint8_t *data;
-  * };
-  * 
-  * void i2c_master_init(void);
-  * enum status_code i2c_master_read_packet_wait(struct i2c_master_packet *const packet);
-  * enum status_code i2c_master_write_packet_wait(struct i2c_master_packet *const packet);
-  * enum status_code i2c_master_write_packet_wait_no_stop(struct i2c_master_packet *const packet);
-  */
-//#include "ms8607_i2c.h"
-
-#include "ch.h"
-#include "hal.h"
-#include "chprintf.h"
-
-/*
-typedef enum ms8607_I2C_StatusCode_ {
-	STATUS_OK           = 0x00,
-	STATUS_ERR_OVERFLOW	= 0x01,
-	STATUS_ERR_TIMEOUT  = 0x02,
-} ms8607_I2C_StatusCode;
-*/
-
-
 /* TODO: Eliminate global state, minimize number of public link-time symbols.
 typedef struct ms8607_sensor_ {
 	uint32_t hsensor_conversion_time = HSENSOR_CONVERSION_TIME_12b;
@@ -67,10 +22,9 @@ typedef struct ms8607_sensor_ {
 
 typedef struct ms8607_api_type_ {
 	ms8607_status  (*init_sensor)(ms8607_sensor *sensor);
-	
+	... etc ...
 } ms8607_api_type;
 */
-
 
 /*
 TODO: error handling if dependency functions are missing?
@@ -80,7 +34,6 @@ TODO: error handling if dependency functions are missing?
 	}
 #endif
 */
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -293,8 +246,6 @@ enum ms8607_status  ms8607_reset(void* caller_context)
  */
 enum ms8607_status ms8607_set_humidity_resolution(void *caller_context, enum ms8607_humidity_resolution res)
 {
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607: ENTERING ms8607_set_humidity_resolution()\n");
 	enum ms8607_status status;
 	uint8_t reg_value, tmp=0;
 	uint32_t conversion_time = HSENSOR_CONVERSION_TIME_12b;
@@ -316,8 +267,6 @@ enum ms8607_status ms8607_set_humidity_resolution(void *caller_context, enum ms8
 		conversion_time = HSENSOR_CONVERSION_TIME_11b;
 	}
 
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:   hsensor_read_user_register(ctx, &reg_value);\n");
 	status = hsensor_read_user_register(caller_context, &reg_value);
 	if( status != ms8607_status_ok )
 		return status;
@@ -328,13 +277,7 @@ enum ms8607_status ms8607_set_humidity_resolution(void *caller_context, enum ms8
 	
 	hsensor_conversion_time = conversion_time;
 
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:   hsensor_write_user_register(ctx, reg_value);\n");
-	status = hsensor_write_user_register(caller_context, reg_value);
-	
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607: LEAVING ms8607_set_humidity_resolution()\n");
-	return status;
+	return hsensor_write_user_register(caller_context, reg_value);
 }
 
 // TODO: documentation shows return value, but it returns `void`
@@ -366,14 +309,9 @@ void ms8607_set_humidity_i2c_master_mode(enum ms8607_humidity_i2c_master_mode mo
  *       - ms8607_status_crc_error : CRC check error
  */
 enum ms8607_status ms8607_read_temperature_pressure_humidity(void* caller_context, float *t, float *p, float *h)
-{/*
-	*t = 0.0;
-	*p = 0.0;
-	*h = 0.0;
-	return ms8607_status_ok;
-	*/
+{
 	enum ms8607_status status;
-	
+
 	status = psensor_read_pressure_and_temperature(caller_context, t, p);
 	if(status != ms8607_status_ok)
 		return status;
@@ -381,7 +319,7 @@ enum ms8607_status ms8607_read_temperature_pressure_humidity(void* caller_contex
 	status = hsensor_read_relative_humidity(caller_context, h);
 	if(status != ms8607_status_ok)
 		return status;
-		
+
 	return ms8607_status_ok;
 }
 
@@ -410,7 +348,7 @@ enum ms8607_status ms8607_get_battery_status(void *caller_context, enum ms8607_b
 		*bat = ms8607_battery_low;
 	else
 		*bat = ms8607_battery_ok;
-		
+
 	return status;
 }
 
@@ -424,24 +362,18 @@ enum ms8607_status ms8607_get_battery_status(void *caller_context, enum ms8607_b
  */
 enum ms8607_status ms8607_enable_heater(void* caller_context)
 {
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607: ENTERING ms8607_enable_heater()\n");
 	enum ms8607_status status;
 	uint8_t reg_value;
-	
+
 	status = hsensor_read_user_register(caller_context, &reg_value);
 	if( status != ms8607_status_ok )
 		return status;
-	
+
 	// Clear the resolution bits
 	reg_value |= HSENSOR_USER_REG_ONCHIP_HEATER_ENABLE;
 	hsensor_heater_on = true;
-	
-	status = hsensor_write_user_register(caller_context, reg_value);
 
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607: LEAVING ms8607_enable_heater()\n");
-	return status;
+	return hsensor_write_user_register(caller_context, reg_value);
 }
 
 /**
@@ -454,8 +386,6 @@ enum ms8607_status ms8607_enable_heater(void* caller_context)
  */
 enum ms8607_status ms8607_disable_heater(void* caller_context)
 {
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607: ENTERING ms8607_disable_heater()\n");
 	enum ms8607_status status;
 	uint8_t reg_value;
 	
@@ -467,11 +397,7 @@ enum ms8607_status ms8607_disable_heater(void* caller_context)
 	reg_value &= ~HSENSOR_USER_REG_ONCHIP_HEATER_ENABLE;
 	hsensor_heater_on = false;
 	
-	status = hsensor_write_user_register(caller_context, reg_value);
-
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607: LEAVING ms8607_disable_heater()\n");
-	return status;
+	return hsensor_write_user_register(caller_context, reg_value);
 }
 
 /**
@@ -564,8 +490,6 @@ enum ms8607_status  hsensor_reset(void* caller_context)
  */
 enum ms8607_status hsensor_write_command(void *caller_context, uint8_t cmd)
 {
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:     ENTERING hsensor_write_command(%02X);\n", cmd);
 	enum ms8607_status status;
 	uint8_t data[1];
 
@@ -576,15 +500,12 @@ enum ms8607_status hsensor_write_command(void *caller_context, uint8_t cmd)
 		.data_length = 1,
 		.data        = data,
 	};
+
 	/* Do the transfer */
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:       depends.i2c_controller_write_packet(caller_context, &transfer);\n");
 	status = depends.i2c_controller_write_packet(caller_context, &transfer);
 	if ( status != ms8607_status_ok )
 		return status;
 
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:     LEAVING hsensor_write_command();\n");
 	return ms8607_status_ok;
 }
 
@@ -661,8 +582,6 @@ enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
  */
 enum ms8607_status hsensor_read_user_register(void *caller_context, uint8_t *value)
 {
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:   ENTERING hsensor_read_user_register(*);\n");
 	enum ms8607_status status;
 	uint8_t buffer[1];
 	buffer[0] = 0;
@@ -675,22 +594,16 @@ enum ms8607_status hsensor_read_user_register(void *caller_context, uint8_t *val
 	};
 	
 	// Send the Read Register Command
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:     hsensor_write_command(HSENSOR_READ_USER_REG_COMMAND);\n");
 	status = hsensor_write_command(caller_context, HSENSOR_READ_USER_REG_COMMAND);
 	if( status != ms8607_status_ok )
 		return status;
-	
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:     depends.i2c_controller_read_packet(caller_context, &read_transfer);\n");
+
 	status = depends.i2c_controller_read_packet(caller_context, &read_transfer);
 	if ( status != ms8607_status_ok )
 		return status;
 
 	*value = buffer[0];
-	
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:   LEAVING hsensor_read_user_register(*);\n");
+
 	return ms8607_status_ok;
 }
 
@@ -883,6 +796,7 @@ bool psensor_is_connected(void* caller_context)
 		.data_length = 0,
 		.data        = NULL,
 	};
+
 	/* Do the transfer */
 	status = depends.i2c_controller_write_packet(caller_context, &transfer);
 	if( status != ms8607_status_ok)
@@ -1095,18 +1009,12 @@ enum ms8607_status psensor_read_pressure_and_temperature(void *caller_context, f
 	if( status != ms8607_status_ok)
 		return status;
 
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:     adc_temperature == %d;\n", adc_temperature);
-
 	// Now read pressure
 	cmd = psensor_resolution_osr*2;
 	cmd |= PSENSOR_START_PRESSURE_ADC_CONVERSION;
 	status = psensor_conversion_and_read_adc(caller_context, cmd, &adc_pressure);
 	if( status != ms8607_status_ok)
 		return status;
-
-	chprintf((BaseSequentialStream *)&SD1,
-		"Driver.MS8607:     adc_pressure    == %d;\n", adc_pressure);
 
 	if (adc_temperature == 0 || adc_pressure == 0)
 		return ms8607_status_i2c_transfer_error;

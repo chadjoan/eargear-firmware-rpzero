@@ -105,6 +105,7 @@ static enum ms8607_status i2c_controller_write_packet_no_stop(void *caller_conte
 
 static void delay_ms(void *caller_context, uint32_t ms)
 {
+	(void)caller_context;
 	chThdSleepMilliseconds(ms);
 }
 
@@ -494,28 +495,11 @@ static msg_t Thread1(void *p)
 		float pressure    = 0.0; // mbar
 		float humidity    = 0.0; // %RH
 
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (0/3)\n");
 		palClearPad(PROGRESS_LED_PORT_07, PROGRESS_LED_PAD_07);
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (1/3)\n");
 		palClearPad(PROGRESS_LED_PORT_08, PROGRESS_LED_PAD_08);
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (2/3)\n");
 		palSetPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.0\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.01\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.0123\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.01234\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012345\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.0123456\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.01234567\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012345678\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with-some LEDs (3/3) ... done.0123456789\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with-some-LEDs (3/3) ... done.01234567890\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012345678901\n");
 
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrieving TPH (temperature-pressure-humidity) readings.\n");
-		chprintf(bss, "boop\n\r\n\n\n");
 		sensor_stat = ms8607_read_temperature_pressure_humidity(
 				i2c_driver, &temperature, &pressure, &humidity);
 		if ( sensor_stat != ms8607_status_ok )
