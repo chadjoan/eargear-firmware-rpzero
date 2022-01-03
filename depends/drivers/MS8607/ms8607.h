@@ -14,6 +14,14 @@
 #include <stdbool.h>
 #include <math.h>
 
+// Types
+
+/*
+typedef uint8_t ms8607_status;
+#define ms8607_ok     ((ms8607_status)1)
+#define ms8607_error  ((ms8607_status)0)
+*/
+
 // Enums
 
 enum ms8607_humidity_i2c_master_mode {
@@ -23,10 +31,11 @@ enum ms8607_humidity_i2c_master_mode {
 
 enum ms8607_status {
 	ms8607_status_ok,
+	ms8607_status_error_within_callback,
 	ms8607_status_no_i2c_acknowledge,
 	ms8607_status_i2c_transfer_error,
 	ms8607_status_crc_error,
-	ms8607_status_heater_on_error
+	ms8607_status_heater_on_error,
 };
 
 enum ms8607_humidity_resolution {
@@ -55,12 +64,31 @@ enum ms8607_pressure_resolution {
 	ms8607_pressure_resolution_osr_8192
 };
 
+// Structs
+typedef struct ms8607_i2c_controller_packet {
+	// Address to peripheral device
+	uint16_t address;
+	// Length of data array
+	uint16_t data_length;
+	// Data array containing all data to be transferred
+	uint8_t *data;
+} ms8607_i2c_controller_packet;
+
+typedef struct ms8607_dependencies {
+	enum ms8607_status  (*i2c_controller_read_packet)(void *caller_context, ms8607_i2c_controller_packet *const);
+	enum ms8607_status  (*i2c_controller_write_packet)(void *caller_context, ms8607_i2c_controller_packet *const);
+	enum ms8607_status  (*i2c_controller_write_packet_no_stop)(void *caller_context, ms8607_i2c_controller_packet *const);
+	void                (*delay_ms)(void *caller_context, uint32_t milliseconds); // TODO: this might disappear after the driver implements proper polling primitives
+} ms8607_dependencies;
+
 // Functions
 
 /**
- * \brief Configures the SERCOM I2C master to be used with the MS8607 device.
+ * \brief Configures the caller's I2C controller to be used with the MS8607 device.
+ *
+ * \param[in] ms8607_dependencies : Struct with callbacks that implement I2C controller functions.
  */
-void ms8607_init(void);
+void ms8607_init(const ms8607_dependencies*);
 
 /**
  * \brief Check whether MS8607 device is connected
@@ -69,7 +97,7 @@ void ms8607_init(void);
  *       - true : Device is present
  *       - false : Device is not acknowledging I2C address
   */
-bool ms8607_is_connected(void);
+bool ms8607_is_connected(void* caller_context);
 
 /**
  * \brief Reset the MS8607 device
@@ -79,7 +107,7 @@ bool ms8607_is_connected(void);
  *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
  *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
  */
-enum ms8607_status ms8607_reset(void);
+enum ms8607_status ms8607_reset(void* caller_context);
 
 /**
  * \brief Set Humidity sensor ADC resolution.
@@ -91,7 +119,7 @@ enum ms8607_status ms8607_reset(void);
  *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
  *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
  */
-enum ms8607_status ms8607_set_humidity_resolution(enum ms8607_humidity_resolution);
+enum ms8607_status ms8607_set_humidity_resolution(void *caller_context, enum ms8607_humidity_resolution);
 
 /**
  * \brief Set Pressure sensor ADC resolution.
@@ -122,7 +150,7 @@ void ms8607_set_humidity_i2c_master_mode(enum ms8607_humidity_i2c_master_mode);
  *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
  *       - ms8607_status_crc_error : CRC check error
  */
-enum ms8607_status ms8607_read_temperature_pressure_humidity( float *, float *, float *);
+enum ms8607_status ms8607_read_temperature_pressure_humidity(void *caller_context, float *, float *, float *);
 
 /**
  * \brief Provide battery status
@@ -136,7 +164,7 @@ enum ms8607_status ms8607_read_temperature_pressure_humidity( float *, float *, 
  *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
  *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
  */
-enum ms8607_status ms8607_get_battery_status(enum ms8607_battery_status*);
+enum ms8607_status ms8607_get_battery_status(void *caller_context, enum ms8607_battery_status*);
 
 /**
  * \brief Enable heater
@@ -146,7 +174,7 @@ enum ms8607_status ms8607_get_battery_status(enum ms8607_battery_status*);
  *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
  *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
  */
-enum ms8607_status ms8607_enable_heater(void);
+enum ms8607_status ms8607_enable_heater(void* caller_context);
 
 /**
  * \brief Disable heater
@@ -156,7 +184,7 @@ enum ms8607_status ms8607_enable_heater(void);
  *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
  *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
  */
-enum ms8607_status ms8607_disable_heater(void);
+enum ms8607_status ms8607_disable_heater(void* caller_context);
 
 /**
  * \brief Get heater status
@@ -170,7 +198,7 @@ enum ms8607_status ms8607_disable_heater(void);
  *       - ms8607_status_i2c_transfer_error : Problem with i2c transfer
  *       - ms8607_status_no_i2c_acknowledge : I2C did not acknowledge
  */
-enum ms8607_status ms8607_get_heater_status(enum ms8607_heater_status*);
+enum ms8607_status ms8607_get_heater_status(void* caller_context, enum ms8607_heater_status*);
 
 /**
  * \brief Returns result of compensated humidity
