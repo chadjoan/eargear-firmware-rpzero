@@ -145,7 +145,13 @@ void i2c_lld_serve_interrupt(I2CDriver *i2cp) {
   uint32_t status = device->status;
 
   if (status & (BSC_CLKT | BSC_ERR)) {
-    // TODO set error flags
+    // TODO: Do other status flags combine with these to indicate different actual causes?
+    i2cp->errors = I2CD_NO_ERROR;
+    if (status & BSC_CLKT)
+      i2cp->errors |= I2CD_TIMEOUT;
+    if (status & BSC_ERR)
+      i2cp->errors |= I2CD_ACK_FAILURE;
+
     wakeup_isr(i2cp, RDY_RESET);
   }
   else if (status & BSC_DONE) {
