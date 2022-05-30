@@ -60,6 +60,57 @@
 
 static BaseSequentialStream *bss;
 
+
+
+uint8_t  handle_i2c_errors(I2CDriver *driver,  msg_t  stat,  char T_or_R);
+
+//void i2c_master_init(void);
+static enum ms8607_status i2c_controller_read_packet(void *caller_context, ms8607_i2c_controller_packet *const packet)
+{
+	I2CDriver *i2c_driver = caller_context;
+	msg_t  stat = i2cMasterReceive(
+		i2c_driver, packet->address,
+		packet->data, packet->data_length);
+
+	if ( handle_i2c_errors(i2c_driver, stat, 'R') )
+		return ms8607_status_error_within_callback;
+	else
+		return ms8607_status_ok;
+}
+
+static enum ms8607_status i2c_controller_write_packet(void *caller_context, ms8607_i2c_controller_packet *const packet)
+{
+	msg_t   stat;
+	uint8_t rxbuf[1];
+	I2CDriver *i2c_driver = caller_context;
+
+	stat = i2cMasterTransmit(
+		i2c_driver, packet->address,
+		packet->data, packet->data_length, rxbuf, 0);
+
+	if ( handle_i2c_errors(i2c_driver, stat, 'T') )
+		return ms8607_status_error_within_callback;
+	else
+		return ms8607_status_ok;
+}
+
+static enum ms8607_status i2c_controller_write_packet_no_stop(void *caller_context, ms8607_i2c_controller_packet *const packet)
+{
+	(void)caller_context;
+	(void)packet;
+	chprintf((BaseSequentialStream *)&SD1,
+		"ERROR: Attempt to call unimplemented function `i2c_master_write_packet_wait_no_stop`.\n");
+	return ms8607_status_error_within_callback;
+}
+
+static void delay_ms(void *caller_context, uint32_t ms)
+{
+	(void)caller_context;
+	chThdSleepMilliseconds(ms);
+}
+
+
+
 #ifdef EXTENDED_SHELL
 
 #define TEST_WA_SIZE        THD_WA_SIZE(4096)
@@ -350,8 +401,21 @@ static msg_t Thread2(void *p) {
 }
 #endif
 
+static void chibi_ms8607_init(void)
+{
+	ms8607_dependencies  depends = {0};
+	//memset(&depends, 0, sizeof(depends));
+	depends.i2c_controller_read_packet          = &i2c_controller_read_packet;
+	depends.i2c_controller_write_packet         = &i2c_controller_write_packet;
+	depends.i2c_controller_write_packet_no_stop = &i2c_controller_write_packet_no_stop;
+	depends.delay_ms = &delay_ms;
+
+	ms8607_init(&depends);
+}
+
 //static WORKING_AREA(waThread1, 4096);
 static WORKING_AREA(waThread1, 16384);
+//static WORKING_AREA(waThread1, 65536);
 static msg_t Thread1(void *p)
 {
 	(void)p;
@@ -362,12 +426,19 @@ static msg_t Thread1(void *p)
 	i2c_config.ic_speed = 1500;
 	i2cStart(i2c_driver, &i2c_config);
 
+	enum ms8607_status  sensor_status;
+
 	chprintf(bss, "I2C.MS8607: (INFO)  Initializing MS8607 driver.\n");
-	ms8607_init();
+	chibi_ms8607_init();
 	palSetPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Resetting sensor.\n");
-	while ( ms8607_reset() != ms8607_status_ok ) {
+	while ( true ) {
+		sensor_status = ms8607_reset(i2c_driver);
+		if ( sensor_status == ms8607_status_ok )
+			break;
+		if ( sensor_status != ms8607_status_error_within_callback )
+			chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 		chprintf(bss, "I2C.MS8607: (ERROR) Sensor reset failed.\n");
 		chThdSleepMilliseconds(1000);
 		chprintf(bss, "I2C.MS8607: (INFO)  Attempting another reset.\n");
@@ -375,7 +446,12 @@ static msg_t Thread1(void *p)
 	palSetPad(PROGRESS_LED_PORT_02, PROGRESS_LED_PAD_02);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Disabling heater.\n");
-	while ( ms8607_disable_heater() != ms8607_status_ok ) {
+	while ( true ) {
+		sensor_status = ms8607_disable_heater(i2c_driver);
+		if ( sensor_status == ms8607_status_ok )
+			break;
+		if ( sensor_status != ms8607_status_error_within_callback )
+			chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 		chprintf(bss, "I2C.MS8607: (ERROR) Failed to disable heater.\n");
 		chThdSleepMilliseconds(1000);
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrying heater disable.\n");
@@ -407,9 +483,13 @@ static msg_t Thread1(void *p)
 	// to detect such things and provide such fallbacks.)
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Setting humidity resolution to 10b.\n");
-	while ( ms8607_set_humidity_resolution(ms8607_humidity_resolution_10b)
-		!= ms8607_status_ok )
+	while ( true )
 	{
+		sensor_status = ms8607_set_humidity_resolution(i2c_driver, ms8607_humidity_resolution_10b);
+		if ( sensor_status == ms8607_status_ok )
+			break;
+		if ( sensor_status != ms8607_status_error_within_callback )
+			chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 		chprintf(bss, "I2C.MS8607: (ERROR) Failed to set humidity resolution.\n");
 		chThdSleepMilliseconds(1000);
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrying setting of humidity resolution to 10b.\n");
@@ -426,42 +506,25 @@ static msg_t Thread1(void *p)
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Humidity controller mode was set.\n");
 	while (TRUE) {
-		enum ms8607_status  sensor_stat;
 		float temperature = 0.0; // degC
 		float pressure    = 0.0; // mbar
 		float humidity    = 0.0; // %RH
 
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (0/3)\n");
 		palClearPad(PROGRESS_LED_PORT_07, PROGRESS_LED_PAD_07);
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (1/3)\n");
 		palClearPad(PROGRESS_LED_PORT_08, PROGRESS_LED_PAD_08);
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (2/3)\n");
 		palSetPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.0\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.01\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.0123\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.01234\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012345\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.0123456\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.01234567\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012345678\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with-some LEDs (3/3) ... done.0123456789\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with-some-LEDs (3/3) ... done.01234567890\n");
-		chprintf(bss, "I2C.MS8607: (INFO)  About to mess with some LEDs (3/3) ... done.012345678901\n");
 
+		chprintf(bss, "\n");
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrieving TPH (temperature-pressure-humidity) readings.\n");
-		chprintf(bss, "boop\n\r\n\n\n");
-		sensor_stat = ms8607_read_temperature_pressure_humidity(
-				&temperature, &pressure, &humidity);
-		if ( sensor_stat != ms8607_status_ok )
+		sensor_status = ms8607_read_temperature_pressure_humidity(
+				i2c_driver, &temperature, &pressure, &humidity);
+		if ( sensor_status != ms8607_status_ok )
 		{
 			palClearPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
 			palSetPad(PROGRESS_LED_PORT_07, PROGRESS_LED_PAD_07);
+			if ( sensor_status != ms8607_status_error_within_callback )
+				chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
 			chprintf(bss, "I2C.MS8607: (ERROR) Failed to read TPH data.\n");
-			if ( sensor_stat == ms8607_status_crc_error )
-				chprintf(bss, "I2C.MS8607: (ERROR) CRC Error.\n");
 		}
 		else
 		{

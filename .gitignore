@@ -4,3 +4,9 @@ TAGS
 .dep/
 build/
 personal/
+depends/ChibiOS-RPi/docs/html/*.html
+depends/ChibiOS-RPi/docs/html/*.js
+depends/ChibiOS-RPi/docs/html/*.png
+depends/ChibiOS-RPi/docs/html/*.css
+
+

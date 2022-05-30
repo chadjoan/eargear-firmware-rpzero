@@ -6,7 +6,8 @@
 # Compiler options here.
 ifeq ($(USE_OPT),)
   USE_OPT = -O2 -ggdb -fomit-frame-pointer \
-    -march=armv6k -mfpu=vfp -mfloat-abi=soft
+    -march=armv6k -mfpu=vfp -mfloat-abi=soft \
+    -Wall
 # NOTE: The "-march=armv6k -mfpu=vfp -mfloat-abi=soft" options are because
 #   I had to disable hardware floating point because ChibiOS would not boot
 #   with it AND floating-point-chprintf enabled at the same time. And as of
