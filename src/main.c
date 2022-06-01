@@ -475,13 +475,17 @@ void chibi_ms8607_assign_functions(ms8607_host_functions *deps, void *caller_con
 	deps->print_int64                  = &print_int64;
 }
 
+// =============================================================================
+// Demo that dumps experiments with various user register settings.
+// TODO: didn't I find some error in the macro definitions or datasheet regarding the resolution settings?
+#if 0
 static enum ms8607_status  print_user_register(ms8607_sensor *sensor, I2CDriver *i2c_driver)
 {
 	enum ms8607_status  sensor_status;
 #define HSENSOR_USER_REG_ONCHIP_HEATER_ENABLE               0x04
 #define HSENSOR_USER_REG_OTP_RELOAD_DISABLE                 0x02
 	uint8_t user_register = 0;
-	sensor_status = hsensor_read_user_register(sensor, &user_register, i2c_driver);
+	sensor_status = ms8607_hsensor_read_user_register(sensor, &user_register, i2c_driver);
 	if ( sensor_status != ms8607_status_ok ) {
 		chprintf(bss, "I2C.MS8607: (ERROR) In function `hsensor_read_user_register`:\n");
 		chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
@@ -740,7 +744,10 @@ static msg_t Thread1(void *p)
 	i2cStop(i2c_driver);
 	return 0;
 }
+#endif
 
+// =============================================================================
+// Attempt at proving a polling interface.
 #if 0
 //static WORKING_AREA(waThread1, 4096);
 static WORKING_AREA(waThread1, 16384);
@@ -991,7 +998,9 @@ static msg_t Thread1(void *p)
 }
 #endif
 
-#if 0
+// =============================================================================
+// Version that uses mostly-original driver API.
+#if 1
 //static WORKING_AREA(waThread1, 4096);
 static WORKING_AREA(waThread1, 16384);
 //static WORKING_AREA(waThread1, 65536);
@@ -1006,14 +1015,37 @@ static msg_t Thread1(void *p)
 	i2cStart(i2c_driver, &i2c_config);
 
 	enum ms8607_status  sensor_status;
+	ms8607_sensor       sensor;
 
+#if 0
+	// TODO: Probably delete this old code.
 	chprintf(bss, "I2C.MS8607: (INFO)  Initializing MS8607 driver.\n");
 	chibi_ms8607_init();
+	palSetPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
+#endif
+
+	chprintf(bss, "I2C.MS8607: (INFO)  Initializing MS8607 host functions / integration.\n");
+	sensor_status = ms8607_init_and_assign_host_functions(&host_funcs, NULL, &chibi_ms8607_assign_functions);
+	if ( sensor_status != ms8607_status_ok ) {
+		chprintf(bss, "I2C.MS8607: (ERROR) In function `ms8607_init_and_assign_host_functions`:\n");
+		chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
+		chprintf(bss, "I2C.MS8607: (ERROR) Unable to continue.\n");
+		return 1;
+	}
+
+	chprintf(bss, "I2C.MS8607: (INFO)  Initializing MS8607 sensor object.\n");
+	sensor_status = ms8607_init_sensor(&sensor, &host_funcs);
+	if ( sensor_status != ms8607_status_ok ) {
+		chprintf(bss, "I2C.MS8607: (ERROR) In function `ms8607_init_sensor`:\n");
+		chprintf(bss, "I2C.MS8607: (ERROR) %s\n", ms8607_stringize_error(sensor_status));
+		chprintf(bss, "I2C.MS8607: (ERROR) Unable to continue.\n");
+		return 1;
+	}
 	palSetPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Resetting sensor.\n");
 	while ( true ) {
-		sensor_status = ms8607_reset(i2c_driver);
+		sensor_status = ms8607_reset(&sensor, i2c_driver);
 		if ( sensor_status == ms8607_status_ok )
 			break;
 		if ( sensor_status != ms8607_status_callback_error )
@@ -1026,7 +1058,7 @@ static msg_t Thread1(void *p)
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Disabling heater.\n");
 	while ( true ) {
-		sensor_status = ms8607_disable_heater(i2c_driver);
+		sensor_status = ms8607_disable_heater(&sensor, i2c_driver);
 		if ( sensor_status == ms8607_status_ok )
 			break;
 		if ( sensor_status != ms8607_status_callback_error )
@@ -1065,7 +1097,7 @@ static msg_t Thread1(void *p)
 	while ( true )
 	{
 		//sensor_status = ms8607_set_humidity_resolution(i2c_driver, ms8607_humidity_resolution_10b);
-		sensor_status = ms8607_set_humidity_resolution(i2c_driver, ms8607_humidity_resolution_12b);
+		sensor_status = ms8607_set_humidity_resolution(&sensor, ms8607_humidity_resolution_12b, i2c_driver);
 		if ( sensor_status == ms8607_status_ok )
 			break;
 		if ( sensor_status != ms8607_status_callback_error )
@@ -1077,18 +1109,23 @@ static msg_t Thread1(void *p)
 	palSetPad(PROGRESS_LED_PORT_04, PROGRESS_LED_PAD_04);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Setting pressure resolution to 2048.\n");
-	ms8607_set_pressure_resolution(ms8607_pressure_resolution_osr_2048);
+	ms8607_set_pressure_resolution(&sensor, ms8607_pressure_resolution_osr_2048, i2c_driver);
 	palSetPad(PROGRESS_LED_PORT_05, PROGRESS_LED_PAD_05);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Setting controller mode to NO HOLD.\n");
-	ms8607_set_humidity_i2c_master_mode(ms8607_i2c_no_hold);
+	ms8607_set_humidity_i2c_controller_mode(&sensor, ms8607_i2c_no_hold, i2c_driver);
 	palSetPad(PROGRESS_LED_PORT_06, PROGRESS_LED_PAD_06);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Humidity controller mode was set.\n");
 	while (TRUE) {
+#if 0
 		float temperature = 0.0; // degC
 		float pressure    = 0.0; // mbar
 		float humidity    = 0.0; // %RH
+#endif
+		int32_t temperature = 0.0; // degC
+		int32_t pressure    = 0.0; // mbar
+		int32_t humidity    = 0.0; // %RH
 
 		palClearPad(PROGRESS_LED_PORT_07, PROGRESS_LED_PAD_07);
 		palClearPad(PROGRESS_LED_PORT_08, PROGRESS_LED_PAD_08);
@@ -1096,8 +1133,8 @@ static msg_t Thread1(void *p)
 
 		chprintf(bss, "\n");
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrieving TPH (temperature-pressure-humidity) readings.\n");
-		sensor_status = ms8607_read_temperature_pressure_humidity(
-				i2c_driver, &temperature, &pressure, &humidity);
+		sensor_status = ms8607_read_temperature_pressure_humidity_int32(
+				&sensor, &temperature, &pressure, &humidity, i2c_driver);
 		if ( sensor_status != ms8607_status_ok )
 		{
 			palClearPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
@@ -1111,9 +1148,12 @@ static msg_t Thread1(void *p)
 			palClearPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
 			palSetPad(PROGRESS_LED_PORT_08, PROGRESS_LED_PAD_08);
 			chprintf(bss, "I2C.MS8607: (INFO)  TPH data received:\n");
-			chprintf(bss, "    Temperature = %.2f degC\n", temperature);
-			chprintf(bss, "    Pressure    = %.2f mbar\n", pressure);
-			chprintf(bss, "    Humidity    = %.2f %RH\n",  humidity);
+			// chprintf(bss, "    Temperature = %.2f degC\n", temperature);
+			// chprintf(bss, "    Pressure    = %.2f mbar\n", pressure);
+			// chprintf(bss, "    Humidity    = %.2f %RH\n",  humidity);
+			chprintf(bss, "    Temperature = %d.%d%d%d degC\n", (int)(temperature/1000), (int)((temperature/100)%10), (int)((temperature/10)%10), (int)(temperature%10) );
+			chprintf(bss, "    Pressure    = %d.%d%d%d mbar\n", (int)(pressure/1000),    (int)((pressure/100)%10),    (int)((pressure/10)%10),    (int)(pressure%10) );
+			chprintf(bss, "    Humidity    = %d.%d%d%d %%RH\n", (int)(humidity/1000),    (int)((humidity/100)%10),    (int)((humidity/10)%10),    (int)(humidity%10) );
 		}
 		chThdSleepMilliseconds(1000);
 	}
