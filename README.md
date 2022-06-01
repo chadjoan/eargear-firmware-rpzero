@@ -1,13 +1,19 @@
-## ChibiOS I2C test for Raspberry Pi Zero ##
+## Eargear firmware on Raspberry Pi Zero ##
 
 ### What it is ###
 
-This project serves as a starting point for writing code on the Raspberry Pi Zero using
+This is firmware for a device that provides a controlled amount of pressure
+to the ear canal during CPAP usage. The pressure amount is determined by
+monitoring the pressure in the CPAP system using a pressure sensor located
+in a CPAP tube adapter. A piezoelectric micropump and a second pressure
+sensor then form a closed-loop control system that adjust the ear canal's
+air pressure to very closely (if not exactly) match the CPAP system's
+pressure, thus ensuring that the same air pressure is applied to both
+sides of the ear drums.
+
+For hardware abstraction and scheduling, it uses
 [Steve Bate's](https://www.stevebate.net/chibios-rpi/GettingStarted.html)
 [ChibiOS-RPi](https://github.com/steve-bate/ChibiOS-RPi) fork of [ChibiOS](https://github.com/mabl/ChibiOS).
-
-The goal is to retrieve pressure, temperature, and humidity readings from
-sensors such as the MS8607 (PHT) and MS5840 (PT) (both from TE Connectivity).
 
 ### How to build ###
 
@@ -41,21 +47,17 @@ with a single partition having type "W95 FAT32 (LBA)" (hex code `c` in `fdisk`).
 Note that `mkfs.vfat` has a `-n <NAME>` option that can be used to label (name)
 the filesystem, which can be helpful for identifying the thing.
 
-**Prerequisite : MS8607 or MS5840 on I2C pins**
+**Prerequisite : Hardware**
 
-This code establishes I2C communication with either an MS8607 or MS5840
-sensor connected to the Raspberry Pi Zero's I2C pins (GPIO 2 and GPIO 3).
-
-TODO: I intend to also write code that allows 2 of these sensors to be
-connected to the same I2C pins by using a separate GPIO pin (or pins) to
-select which one is being communicated with.
-
+The build for this thing is so far rather complicated. I would like to explain
+it, but it will perhaps have to wait for another time, or perhaps even
+a different design that is somehow easier to construct.
 
 **Build and install**
 
 ```
-git clone https://github.com/chadjoan/cdj-testing-rpzero-i2c.git
-cd cdj-testing-rpzero-i2c
+git clone https://github.com/chadjoan/eargear-firmware-rpzero.git
+cd eargear-firmware-rpzero
 make
 ```
 
@@ -68,6 +70,5 @@ cp -r build/sdcard-final-contents/* /path/to/sd-card/
 ```
 
 After that, just unmount (eject) and remove the microSD card, put it into the
-Raspberry Pi Zero, plug in (turn on) the RPi Zero, then (hopefully) enjoy some
-successful and happy blinkenlight.
+Raspberry Pi Zero, and then plug in (turn on) the RPi Zero.
 
