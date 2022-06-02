@@ -60,7 +60,14 @@
 
 static BaseSequentialStream *bss;
 
+#define I2C_EXPANDER_ADDR ((i2caddr_t)0x70)
 
+typedef struct i2c_context
+{
+	I2CDriver  *i2c_driver;
+	//uint8_t    i2c_expander_port_selection_bits;
+}
+i2c_context;
 
 uint8_t  handle_i2c_errors(I2CDriver *driver,  msg_t  stat,  char T_or_R);
 uint8_t  handle_i2c_errors_(I2CDriver *driver,  msg_t  stat,  char T_or_R, i2cflags_t *errors);
@@ -68,13 +75,13 @@ uint8_t  handle_i2c_errors_(I2CDriver *driver,  msg_t  stat,  char T_or_R, i2cfl
 //void i2c_master_init(void);
 static enum ms8607_status i2c_controller_read(void *caller_context, ms8607_i2c_controller_packet *const packet)
 {
-	I2CDriver *i2c_driver = caller_context;
+	i2c_context *ctx = caller_context;
 	msg_t  stat = i2cMasterReceive(
-		i2c_driver, packet->address,
+		ctx->i2c_driver, packet->address,
 		packet->data, packet->data_length);
 
 	i2cflags_t  errors;
-	if ( handle_i2c_errors_(i2c_driver, stat, 'R', &errors) )
+	if ( handle_i2c_errors_(ctx->i2c_driver, stat, 'R', &errors) )
 	{
 		if ( errors == I2CD_ACK_FAILURE )
 			return ms8607_status_callback_i2c_nack;
@@ -89,13 +96,13 @@ static enum ms8607_status i2c_controller_write(void *caller_context, ms8607_i2c_
 {
 	msg_t   stat;
 	uint8_t rxbuf[1];
-	I2CDriver *i2c_driver = caller_context;
+	i2c_context *ctx = caller_context;
 
 	stat = i2cMasterTransmit(
-		i2c_driver, packet->address,
+		ctx->i2c_driver, packet->address,
 		packet->data, packet->data_length, rxbuf, 0);
 
-	if ( handle_i2c_errors(i2c_driver, stat, 'T') )
+	if ( handle_i2c_errors(ctx->i2c_driver, stat, 'T') )
 		return ms8607_status_callback_error;
 	else
 		return ms8607_status_ok;
@@ -356,13 +363,72 @@ static WORKING_AREA(waThread1, 16384);
 //static WORKING_AREA(waThread1, 65536);
 static msg_t Thread1(void *p)
 {
+	msg_t       stat;
+	uint8_t     txbuf[1];
+	uint8_t     rxbuf[1];
+	uint8_t     i2c_expander_port_selection_bits = 0xFF;
+
 	(void)p;
 	chRegSetThreadName("i2c");
 
-	I2CDriver  *i2c_driver = &I2CD;
+	i2c_context  i2c;
+	i2c.i2c_driver= &I2CD;
 	I2CConfig  i2c_config;
 	i2c_config.ic_speed = 1500;
-	i2cStart(i2c_driver, &i2c_config);
+	i2cStart(i2c.i2c_driver, &i2c_config);
+
+	chprintf(bss, "I2C.TCA9548A: (INFO)  Setting up I2C multiplexer.\n");
+
+#if 0
+	i2cflags_t  errors;
+	chprintf(bss, "I2C.TCA9548A: (INFO)  Reading I2C multiplexer register.\n");
+	stat = i2cMasterReceive(
+		i2c.i2c_driver, I2C_EXPANDER_ADDR, rxbuf, sizeof(rxbuf));
+
+	if ( handle_i2c_errors_(i2c.i2c_driver, stat, 'R', &errors) )
+	{
+		if ( errors == I2CD_ACK_FAILURE )
+			chprintf(bss, "I2C.TCA9548A: (ERROR) Problem when communicating with I2C multiplexer: ACK FAILURE\n");
+		else
+			chprintf(bss, "I2C.TCA9548A: (ERROR) Problem when communicating with I2C multiplexer: (unknown)\n");
+		chprintf(bss, "I2C.TCA9548A: (ERROR) Unable to continue.\n");
+		return 1;
+	}
+	i2c_expander_port_selection_bits = rxbuf[0];
+	chprintf(bss, "I2C.TCA9548A: (INFO)  Register data received:\n");
+	chprintf(bss, "    0x%02X\n", i2c_expander_port_selection_bits);
+#endif
+
+	chprintf(bss, "I2C.TCA9548A: (INFO)  Writing I2C multiplexer register.\n");
+	i2c_expander_port_selection_bits = 0x01;
+	txbuf[0] = i2c_expander_port_selection_bits;
+	stat = i2cMasterTransmit(
+		i2c.i2c_driver, I2C_EXPANDER_ADDR, txbuf, sizeof(txbuf), rxbuf, 0);
+
+	if ( handle_i2c_errors(i2c.i2c_driver, stat, 'T') ) {
+		chprintf(bss, "I2C.TCA9548A: (ERROR) Problem when communicating with I2C multiplexer.\n");
+		chprintf(bss, "I2C.TCA9548A: (ERROR) Unable to continue.\n");
+		return 1;
+	}
+
+#if 0
+	chprintf(bss, "I2C.TCA9548A: (INFO)  Reading I2C multiplexer register.\n");
+	stat = i2cMasterReceive(
+		i2c.i2c_driver, I2C_EXPANDER_ADDR, rxbuf, sizeof(rxbuf));
+
+	if ( handle_i2c_errors_(i2c.i2c_driver, stat, 'R', &errors) )
+	{
+		if ( errors == I2CD_ACK_FAILURE )
+			chprintf(bss, "I2C.TCA9548A: (ERROR) Problem when communicating with I2C multiplexer: ACK FAILURE\n");
+		else
+			chprintf(bss, "I2C.TCA9548A: (ERROR) Problem when communicating with I2C multiplexer: (unknown)\n");
+		chprintf(bss, "I2C.TCA9548A: (ERROR) Unable to continue.\n");
+		return 1;
+	}
+	i2c_expander_port_selection_bits = rxbuf[0];
+	chprintf(bss, "I2C.TCA9548A: (INFO)  Register data received:\n");
+	chprintf(bss, "    0x%02X\n", i2c_expander_port_selection_bits);
+#endif
 
 	enum ms8607_status  sensor_status;
 	ms8607_sensor       sensor;
@@ -388,7 +454,7 @@ static msg_t Thread1(void *p)
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Resetting sensor.\n");
 	while ( true ) {
-		sensor_status = ms8607_reset(&sensor, i2c_driver);
+		sensor_status = ms8607_reset(&sensor, &i2c);
 		if ( sensor_status == ms8607_status_ok )
 			break;
 		if ( sensor_status != ms8607_status_callback_error )
@@ -401,7 +467,7 @@ static msg_t Thread1(void *p)
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Disabling heater.\n");
 	while ( true ) {
-		sensor_status = ms8607_disable_heater(&sensor, i2c_driver);
+		sensor_status = ms8607_disable_heater(&sensor, &i2c);
 		if ( sensor_status == ms8607_status_ok )
 			break;
 		if ( sensor_status != ms8607_status_callback_error )
@@ -416,7 +482,7 @@ static msg_t Thread1(void *p)
 	while ( true )
 	{
 		//sensor_status = ms8607_set_humidity_resolution(i2c_driver, ms8607_humidity_resolution_10b);
-		sensor_status = ms8607_set_humidity_resolution(&sensor, ms8607_humidity_resolution_12b, i2c_driver);
+		sensor_status = ms8607_set_humidity_resolution(&sensor, ms8607_humidity_resolution_12b, &i2c);
 		if ( sensor_status == ms8607_status_ok )
 			break;
 		if ( sensor_status != ms8607_status_callback_error )
@@ -428,11 +494,11 @@ static msg_t Thread1(void *p)
 	palSetPad(PROGRESS_LED_PORT_04, PROGRESS_LED_PAD_04);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Setting pressure resolution to 2048.\n");
-	ms8607_set_pressure_resolution(&sensor, ms8607_pressure_resolution_osr_2048, i2c_driver);
+	ms8607_set_pressure_resolution(&sensor, ms8607_pressure_resolution_osr_2048, &i2c);
 	palSetPad(PROGRESS_LED_PORT_05, PROGRESS_LED_PAD_05);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Setting controller mode to NO HOLD.\n");
-	ms8607_set_humidity_i2c_controller_mode(&sensor, ms8607_i2c_no_hold, i2c_driver);
+	ms8607_set_humidity_i2c_controller_mode(&sensor, ms8607_i2c_no_hold, &i2c);
 	palSetPad(PROGRESS_LED_PORT_06, PROGRESS_LED_PAD_06);
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Humidity controller mode was set.\n");
@@ -448,7 +514,7 @@ static msg_t Thread1(void *p)
 		chprintf(bss, "\n");
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrieving TPH (temperature-pressure-humidity) readings.\n");
 		sensor_status = ms8607_read_temperature_pressure_humidity_int32(
-				&sensor, &temperature, &pressure, &humidity, i2c_driver);
+				&sensor, &temperature, &pressure, &humidity, &i2c);
 		if ( sensor_status != ms8607_status_ok )
 		{
 			palClearPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
@@ -470,10 +536,9 @@ static msg_t Thread1(void *p)
 	}
 
 	// poor i2cStop statement can never execute.
-	i2cStop(i2c_driver);
+	i2cStop(i2c.i2c_driver);
 	return 0;
 }
-
 
 /// Application entry point.
 int main(void) {
