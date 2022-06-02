@@ -385,7 +385,7 @@ enum ms8607_status  ms8607_init_sensor(ms8607_sensor *new_sensor,  ms8607_host_f
 ///       - true : Device is present
 ///       - false : Device is not acknowledging I2C address
 ///
-bool ms8607_is_connected(ms8607_sensor *sensor,  void* caller_context);
+bool ms8607_is_connected(ms8607_sensor *sensor,  void *caller_context);
 
 /// \brief Reset the MS8607 device
 ///
@@ -404,7 +404,7 @@ bool ms8607_is_connected(ms8607_sensor *sensor,  void* caller_context);
 ///       - ms8607_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_reset(ms8607_sensor *sensor,  void* caller_context);
+enum ms8607_status ms8607_reset(ms8607_sensor *sensor,  void *caller_context);
 
 /// \brief Set humidity ADC resolution.
 ///
@@ -530,7 +530,7 @@ enum ms8607_status ms8607_get_battery_status(ms8607_sensor *sensor, enum ms8607_
 ///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void* caller_context);
+enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void *caller_context);
 
 /// \brief Disable heater
 ///
@@ -544,7 +544,7 @@ enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void* caller_cont
 ///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_disable_heater(ms8607_sensor *sensor, void* caller_context);
+enum ms8607_status ms8607_disable_heater(ms8607_sensor *sensor, void *caller_context);
 
 /// \brief Get heater status
 ///
