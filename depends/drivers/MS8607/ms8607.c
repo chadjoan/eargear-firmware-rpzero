@@ -119,8 +119,8 @@ static uint32_t psensor_conversion_time[6] = {
 
 // Static functions
 // humidity sensor functions
-static enum ms8607_status hsensor_reset(ms8607_sensor *sensor, void* caller_context);
-static bool hsensor_is_connected(ms8607_sensor *sensor, void* caller_context);
+static enum ms8607_status hsensor_reset(ms8607_sensor *sensor, void *caller_context);
+static bool hsensor_is_connected(ms8607_sensor *sensor, void *caller_context);
 static enum ms8607_status hsensor_write_command(ms8607_sensor *sensor, uint8_t, void *caller_context);
 static enum ms8607_status hsensor_write_command_no_stop(ms8607_sensor *sensor, uint8_t, void *caller_context);
 static enum ms8607_status hsensor_crc_check( uint16_t, uint8_t);
@@ -129,7 +129,7 @@ static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor
 static enum ms8607_status hsensor_read_relative_humidity(ms8607_sensor *sensor, int32_t *, void *caller_context);
 
 // Pressure sensor functions
-static enum ms8607_status psensor_reset(ms8607_sensor *sensor, void* caller_context);
+static enum ms8607_status psensor_reset(ms8607_sensor *sensor, void *caller_context);
 static bool psensor_is_connected(ms8607_sensor *sensor, void *caller_context);
 static enum ms8607_status psensor_write_command(ms8607_sensor *sensor, uint8_t, void *caller_context);
 static enum ms8607_status psensor_read_eeprom_coeff(ms8607_sensor *sensor, uint8_t, uint16_t*, void *caller_context);
@@ -411,19 +411,18 @@ enum ms8607_status  ms8607_init_sensor(ms8607_sensor *new_sensor,  ms8607_host_f
 	return ms8607_status_ok;
 }
 
-/**
- * \brief Check whether MS8607 device is connected
- *
- * \param[in] ms8607_sensor *sensor : Sensor object to test for connectivity.
- * \param[in] void* caller_context : When this function calls any callbacks
- *         from the `ms8607_host_functions` structure, this will be passed
- *         directly to those callbacks' `caller_context` parameter.
- *
- * \return bool : status of MS8607
- *       - true : Device is present
- *       - false : Device is not acknowledging I2C address
-  */
-bool ms8607_is_connected(ms8607_sensor *sensor,  void* caller_context)
+/// \brief Check whether MS8607 device is connected
+///
+/// \param[in] ms8607_sensor *sensor : Sensor object to test for connectivity.
+/// \param[in] void* caller_context : When this function calls any callbacks
+///         from the `ms8607_host_functions` structure, this will be passed
+///         directly to those callbacks' `caller_context` parameter.
+///
+/// \return bool : status of MS8607
+///       - true : Device is present
+///       - false : Device is not acknowledging I2C address
+///
+bool ms8607_is_connected(ms8607_sensor *sensor,  void *caller_context)
 {
 	return (
 		hsensor_is_connected(sensor, caller_context) &&
@@ -468,7 +467,7 @@ bool ms8607_is_connected(ms8607_sensor *sensor,  void* caller_context)
 ///       - ms8607_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status  ms8607_reset(ms8607_sensor *sensor,  void* caller_context)
+enum ms8607_status  ms8607_reset(ms8607_sensor *sensor,  void *caller_context)
 {
 	if ( sensor == NULL )
 		return ms8607_status_null_sensor;
@@ -587,7 +586,7 @@ enum ms8607_status ms8607_set_humidity_i2c_controller_mode(ms8607_sensor *sensor
 ///       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
 ///       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
 ///
-enum ms8607_status ms8607_read_temperature_pressure_humidity_int32(ms8607_sensor *sensor, int32_t *t, int32_t *p, int32_t *h,  void* caller_context)
+enum ms8607_status ms8607_read_temperature_pressure_humidity_int32(ms8607_sensor *sensor, int32_t *t, int32_t *p, int32_t *h,  void *caller_context)
 {
 	if ( sensor == NULL )
 		return ms8607_status_null_sensor;
@@ -697,7 +696,7 @@ enum ms8607_status ms8607_get_battery_status(ms8607_sensor *sensor, enum ms8607_
 ///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void* caller_context)
+enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void *caller_context)
 {
 	if ( sensor == NULL )
 		return ms8607_status_null_sensor;
@@ -728,7 +727,7 @@ enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void* caller_cont
 ///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_disable_heater(ms8607_sensor *sensor, void* caller_context)
+enum ms8607_status ms8607_disable_heater(ms8607_sensor *sensor, void *caller_context)
 {
 	if ( sensor == NULL )
 		return ms8607_status_null_sensor;
@@ -762,7 +761,7 @@ enum ms8607_status ms8607_disable_heater(ms8607_sensor *sensor, void* caller_con
 ///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_get_heater_status(ms8607_sensor *sensor, enum ms8607_heater_status *heater, void* caller_context)
+enum ms8607_status ms8607_get_heater_status(ms8607_sensor *sensor, enum ms8607_heater_status *heater, void *caller_context)
 {
 	if ( sensor == NULL )
 		return ms8607_status_null_sensor;
@@ -796,7 +795,7 @@ enum ms8607_status ms8607_get_heater_status(ms8607_sensor *sensor, enum ms8607_h
 ///       - true : Device is present
 ///       - false : Device is not acknowledging I2C address
 ///
-static bool hsensor_is_connected(ms8607_sensor *sensor, void* caller_context)
+static bool hsensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
 
@@ -826,7 +825,7 @@ static bool hsensor_is_connected(ms8607_sensor *sensor, void* caller_context)
 ///       - ms8607_status_ok : I2C transfer completed successfully
 ///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-static enum ms8607_status  hsensor_reset(ms8607_sensor *sensor, void* caller_context)
+static enum ms8607_status  hsensor_reset(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
 
@@ -1275,15 +1274,12 @@ enum ms8607_status  ms8607_get_dew_point(ms8607_sensor *sensor, float temperatur
 /// \param[in] void* caller_context : When this function calls any callbacks
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
-/// \param[in] void* caller_context : When this function calls any callbacks
-///         from the `ms8607_host_functions` structure, this will be passed
-///         directly to those callbacks' `caller_context` parameter.
 ///
 /// \return bool : status of Pressure sensor
 ///       - true : Device is present
 ///       - false : Device is not acknowledging I2C address
 ///
-static bool psensor_is_connected(ms8607_sensor *sensor, void* caller_context)
+static bool psensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
 
@@ -1805,7 +1801,7 @@ enum ms8607_status psensor_poll_raw_pressure(ms8607_sensor *sensor, uint64_t mic
 ///
 /// \return bool : TRUE if CRC is OK, FALSE if KO
 ///
-bool psensor_crc_check (uint16_t *n_prom, uint8_t crc)
+static bool psensor_crc_check (uint16_t *n_prom, uint8_t crc)
 {
 	assert( n_prom != NULL );
 	uint8_t cnt, n_bit;
