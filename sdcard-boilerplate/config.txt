@@ -1,3 +1,48 @@
+# On some RPi firmwares this will prevent a low GPIO3 from putting the RPi
+# into a "safe mode". GPIO3 is also known as SCL1, and is the clock line
+# for the second I2C controller in the BCM2835. If there is some I2C device
+# on this line that doesn't power up quickly enough while holding the clock
+# low, then it could send the RPi into safe mode. Avoiding safe mode is a way
+# to prevent this misfortune from happening.
+#
+# Someone experiencing a potential safemode issue reported it here:
+# https://forums.raspberrypi.com/viewtopic.php?t=173530
+#
+# It has also been reported that safemode no longer exists in more recent
+# RPi firmwares. In those cases, this configuration option should have no
+# effect (and in a good way: accidental safemode would be impossible
+# even without using this option).
+# https://forums.raspberrypi.com/viewtopic.php?t=97419
+#
+avoid_safe_mode=1
+
+# Signals intent to (not) use a PoE HAT EPROM:
+# "By default, a probe on the I2C bus will happen at startup, even when
+# a PoE HAT is not attached. Setting this option to 1 disables control of
+# a PoE HAT fan through I2C (on pins ID_SD & ID_SC). If you are not intending
+# to use a PoE HAT doing this is useful if you need to minimise boot time."
+#
+# In our situation, we may use Pi HATs, but we aren't booting into NOOBS or
+# other Linux systems that rely on Raspberry Pi HATs' EPROM for device
+# enumeration. We are doing bare-metal programming and are willing to simply
+# hardcode which pins are connected to which pieces of hardware.
+# Thus we can enjoy some boot-time speed up, or whatever other benefits
+# might be conferred by disabling this logic.
+# (That may even allow us to us ID_SC and ID_SD as I2C pins, thus allowing
+# us to use TWO (identially-addressed) I2C peripherals with the RPi, which
+# is nice. This configuration option probably isn't necessary for that, though.)
+#
+disable_poe_fan=1
+
+# "Set this option to 0 to prevent the firmware from trying to read
+# an I2C HAT EEPROM (connected to pins ID_SD & ID_SC) at powerup. [...]"
+#
+# Like with `disable_poe_fan`, we aren't using I2C HAT EEPROMs.
+# (They'll be there possibly, so be aware of possible I2C address conflicts,
+# but we don't need the Pi to read their contents.)
+#
+force_eeprom_read=0
+
 # Determines how much memory the GPU can access.
 # "The minimum value is 16, however this disables certain GPU features."
 # We aren't using the GPU at all (except for booting, and only because the
