@@ -83,6 +83,9 @@
 #define HAL_USE_I2C                 TRUE
 #endif
 
+#define BCM2835_I2C_USE_I2C0        TRUE
+#define BCM2835_I2C_USE_I2C1        TRUE
+
 /**
  * @brief   Enables the ICU subsystem.
  */
