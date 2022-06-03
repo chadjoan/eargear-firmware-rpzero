@@ -86,6 +86,7 @@ CSRC = $(PORTSRC) \
        $(BOARDSRC) \
        ${CHIBIOS}/os/various/shell.c \
        ${CHIBIOS}/os/various/chprintf.c \
+       depends/drivers/MS5840/ms5840.c \
        depends/drivers/MS8607/ms8607.c \
        src/main.c
 
@@ -120,6 +121,7 @@ INCDIR = src \
          $(PORTINC) $(KERNINC) $(TESTINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) \
          $(CHIBIOS)/os/various \
+         depends/drivers/MS5840 \
          depends/drivers/MS8607
 
 #
