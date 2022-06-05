@@ -696,7 +696,8 @@ static enum ms5840_status psensor_read_pressure_and_temperature(ms5840_sensor *s
 
 	enum ms5840_status status = ms5840_status_ok;
 	uint32_t adc_temperature, adc_pressure;
-	int32_t dT, TEMP;
+	int64_t dT;
+	int32_t TEMP;
 	int64_t OFF, SENS, P, T2, OFF2, SENS2;
 	uint8_t cmd;
 
@@ -732,21 +733,25 @@ static enum ms5840_status psensor_read_pressure_and_temperature(ms5840_sensor *s
 	// Second order temperature compensation
 	if( TEMP < 2000 )
 	{
-		T2 = ( 3 * ( (int64_t)dT  * (int64_t)dT  ) ) >> 33;
-		OFF2 = 61 * ((int64_t)TEMP - 2000) * ((int64_t)TEMP - 2000) / 16 ;
-		SENS2 = 29 * ((int64_t)TEMP - 2000) * ((int64_t)TEMP - 2000) / 16 ;
-
-		if( TEMP < -1500 )
+		int64_t TEMP_MINUS_2000 = TEMP-2000;
+		if ( TEMP < 1000 )
 		{
-			OFF2 += 17 * ((int64_t)TEMP + 1500) * ((int64_t)TEMP + 1500) ;
-			SENS2 += 9 * ((int64_t)TEMP + 1500) * ((int64_t)TEMP + 1500) ;
+			T2 = (((int64_t)12) * (dT*dT)) >> 35;
+			OFF2 = (((int64_t)30) * (TEMP_MINUS_2000*TEMP_MINUS_2000)) >> 8;
+			SENS2 = 0;
+		}
+		else
+		{
+			T2 = (((int64_t)14) * (dT*dT)) >> 35;
+			OFF2 = (((int64_t)35) * (TEMP_MINUS_2000*TEMP_MINUS_2000)) >> 3;
+			SENS2 = (((int64_t)63) * (TEMP_MINUS_2000*TEMP_MINUS_2000)) >> 5;
 		}
 	}
 	else
 	{
-		T2 = ( 5 * ( (int64_t)dT  * (int64_t)dT  ) ) >> 38;
-		OFF2 = 0 ;
-		SENS2 = 0 ;
+		T2 = 0;
+		OFF2 = 0;
+		SENS2 = 0;
 	}
 
 	// OFF = OFF_T1 + TCO * dT
