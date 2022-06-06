@@ -88,7 +88,37 @@ void pwm_lld_start(PWMDriver *pwmp) {
   while ((GPIO0_CLK_CTL & 0x80) != 0);
 
   /* set pwm div to 32 (19.2/32 = 600KHz).*/
-  GPIO0_CLK_DIV = GPIO_CLK_PWD | (32 << 12);
+  //GPIO0_CLK_DIV = GPIO_CLK_PWD | (32 << 12);
+
+  // set pwm div based on desired frequency.
+  uint64_t maxfreq = 19200000;
+
+  // We premultiply the maximum frequency so that we end up with fractional
+  // precision once we divide (ratio) it by the configured frequency.
+  maxfreq = maxfreq << 12;
+
+  // Calculate the frequency divider:
+  // It's the ratio of our target frequency to the maximum (source) clock frequency.
+  // The lowest 12 bits of `div` will be fractional bits, which will correspond
+  // to the fractional bits in the `GPIO0_CLK_DIV` register.
+  // The next higher 12 bits of `div` are the whole number portion of the divider.
+  // Anything over 24 bits is unacceptable: the `GPIO0_CLK_DIV` just doesn't have
+  // space for them!
+  // As a corollary, the maximum frequency division is just under 4096 and the
+  // minimum frequency is thus slightly above 4687.5 Hz.
+  uint64_t div = maxfreq / pwmp->config->frequency;
+
+  // If the divider is too large, then we try to complain.
+  chDbgAssert(div < (1 << 24), "PWM Frequency <= 4687.5 Hz specified; implies frequency divider that is too large!",
+    "PWM Frequency <= 4687.5 Hz specified; implies frequency divider that is too large!");
+
+  // If we couldn't complain, just truncate.
+  // This isn't great, but it's at least a deterministic failure-mode.
+  // For values that are within the valid range, this is a no-op.
+  div &= 0xFFFFFF;
+
+  // Set the clock divider.
+  GPIO0_CLK_DIV = GPIO_CLK_PWD | div;
 
   /* enable clock generator.*/
   GPIO0_CLK_CTL = GPIO_CLK_PWD | 0x11;
