@@ -166,6 +166,10 @@ boot_delay=0
 #
 dtoverlay=disable-bt,disable-wifi
 
+# Ensure that GPIO18 is handling PWM
+# (I was hoping to just use GPIO12, but ChibiOS seems to hardcode GPIO18 in its pwm_lld.c)
+gpio=18=a5
+
 # Seems necessary for Serial/UART to work?
 enable_uart=1
 

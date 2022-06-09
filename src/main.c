@@ -30,11 +30,12 @@
 // Pin allocations:
 // - Pins 2 & 3 are allocated for I2C.
 // - Pins 14 & 15 are allocated for UART. (see also: sdcard-boilerplate/config.txt)
+// - Pin 18 is used for PWM. (currently hardcoded in os/hal/platforms/BCM2835/pwm_lld.(c|h))
 // - Pins 22-27 might be nice to avoid, because they might be used for JTAG
 //     debugging at some point. Right now (at least, 2022-01-02) it doesn't work
 //     though, so it's not a big deal.
 
-#define PROGRESS_LED_PAD_01  GPIO18_PAD
+//#define PROGRESS_LED_PAD_01  GPIO18_PAD
 #define PROGRESS_LED_PAD_02  GPIO17_PAD
 #define PROGRESS_LED_PAD_03  GPIO10_PAD
 #define PROGRESS_LED_PAD_04  GPIO9_PAD
@@ -45,7 +46,7 @@
 #define PROGRESS_LED_PAD_09  GPIO19_PAD
 //#define PROGRESS_LED_PAD_10  GPIO19_PAD
 
-#define PROGRESS_LED_PORT_01  GPIO18_PORT
+//#define PROGRESS_LED_PORT_01  GPIO18_PORT
 #define PROGRESS_LED_PORT_02  GPIO17_PORT
 #define PROGRESS_LED_PORT_03  GPIO10_PORT
 #define PROGRESS_LED_PORT_04  GPIO9_PORT
@@ -536,9 +537,7 @@ void chibi_ms5840_assign_functions(ms5840_host_functions *deps, void *caller_con
 }
 
 
-//static WORKING_AREA(waThread1, 4096);
 static WORKING_AREA(waThread1, 16384);
-//static WORKING_AREA(waThread1, 65536);
 static msg_t Thread1(void *p)
 {
 #if 0
@@ -666,7 +665,7 @@ static msg_t Thread1(void *p)
 		chprintf(bss, "I2C.MS8607: (ERROR) Unable to continue.\n");
 		return 1;
 	}
-	palSetPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
+	//palSetPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
 
 	chprintf(bss, "I2C.MS5840: (INFO)  Resetting sensor.\n");
 	while ( true ) {
@@ -794,6 +793,95 @@ static msg_t Thread1(void *p)
 	return 0;
 }
 
+
+// This demo does a frequency sweep with PWM on GPIO18.
+//
+// It uses 50% duty cycle always.
+// It starts with a waveform at 21.5kHz, then sweeps up to 24.5kHz.
+//
+// These are the tolerances on the muRata MZB3004T04 micropump that
+// I am aiming to drive with this PWM, hence that specific band of frequencies.
+// (Note that the raw PWM signal coming from a logic pin wouldn't be able to
+// drive such a pump, but I do intend to send that through a MOSFET to switch
+// a higher voltage (ex: 12V) power source, then pass that power signal
+// through something like an LC filter to smooth the waveform into something
+// more sinusoidal, so that the pump gets the power signal that it wants.)
+//
+// In playing with this, I also discovered that the clock frequency behind
+// the PWM circuit shouldn't be set to 19.2MHz. For some reason that causes
+// a very low frequency PWM, like a few Hz (but it was still frequency-sweeping,
+// so the code wasn't just confused with the other demo). I set it to 9.6MHz
+// instead, and everything worked fine. Dividing it by 8 also worked, but
+// generally it is useful to use the highest clock possible, since that gives
+// the resulting PWM waveform the highest fidelity.
+//
+static PWMConfig pwm_config = {
+  9600000,     // PWM clock frequency; max is 19.2MHz. (Ignored by ChibiOS-RPi's original pwm_lld.c, which used 600kHz by default. Now adjustable.)
+  893,         // PWM period that driver starts with when pwmStart is called. `clock_freq / period = pwm_freq`.
+  NULL,        // Period callback.
+  {
+   {PWM_OUTPUT_ACTIVE_HIGH, NULL}
+  }
+};
+
+static void set_pwm_config_freq_on_bcm2835(PWMConfig *config, uint32_t target_freq)
+{
+	config->period = config->frequency / target_freq;
+}
+
+static WORKING_AREA(waThread2, 128);
+static msg_t Thread2(void *p) {
+	(void)p;
+	chRegSetThreadName("pwm");
+
+	// NOTE: The PWM driver hardcodes the use of pin 18 on the BCM2835
+	//   as the PWM pin. Thus, these couple functions will set GPIO18's
+	//   alt-mode accordingly (though it might already be set in config.txt).
+	pwmInit();
+	pwmObjectInit(&PWMD1);
+
+	// `duty_cycle` is an integer from 0 - 10000, with 10000 meaning 100%.
+	uint32_t  duty_cycle = 5000;
+
+	// muRata MZB3004T04 resonant frequency range is 21.5kHz to 24.5kHz.
+	// So we'll start at the bottom of that range and sweep up to the top.
+	uint32_t freq = 21500; // in Hz
+	set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
+
+	pwmStart(&PWMD1, &pwm_config);
+	PWM_CTL |= PWM0_MODE_MS;
+	pwmEnableChannel(&PWMD1, 0, PWM_PERCENTAGE_TO_WIDTH(&PWMD1, duty_cycle));
+
+	while (TRUE) {
+		palClearPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
+		chThdSleepMilliseconds(200);
+		palSetPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
+		chThdSleepMilliseconds(1800);
+
+		// Change frequency.
+		pwmDisableChannel(&PWMD1, 0);
+		pwmStop(&PWMD1);
+
+		freq += 250;
+		if ( freq > 24500 )
+			freq = 21500;
+
+		set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
+		BaseSequentialStream *output_stream = (BaseSequentialStream *)&SD1;
+		chprintf(output_stream, "pwm_config->period   == %d\r\n", pwm_config.period);
+		chprintf(output_stream, "pwm target frequency == %d\r\n", freq);
+		chprintf(output_stream, "pwm result frequency == %d\r\n", pwm_config.frequency / pwm_config.period);
+
+		pwmStart(&PWMD1, &pwm_config);
+		PWM_CTL |= PWM0_MODE_MS;
+		pwmEnableChannel(&PWMD1, 0, PWM_PERCENTAGE_TO_WIDTH(&PWMD1, duty_cycle));
+	}
+
+	pwmDisableChannel(&PWMD1, 0);
+	pwmStop(&PWMD1);
+	return 0;
+}
+
 /// Application entry point.
 int main(void) {
 	bss = (BaseSequentialStream *)&SD1;
@@ -802,7 +890,7 @@ int main(void) {
 	chSysInit();
 
 	// Serial port initialization.
-	sdStart(&SD1, NULL); 
+	sdStart(&SD1, NULL);
 	chprintf((BaseSequentialStream *)&SD1, "Main (SD1 started)\r\n");
 
 	// Shell initialization.
@@ -813,7 +901,7 @@ int main(void) {
 
 	// Set mode of onboard LEDs
 
-	palSetPadMode(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01, PAL_MODE_OUTPUT);
+	//palSetPadMode(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01, PAL_MODE_OUTPUT);
 	palSetPadMode(PROGRESS_LED_PORT_02, PROGRESS_LED_PAD_02, PAL_MODE_OUTPUT);
 	palSetPadMode(PROGRESS_LED_PORT_03, PROGRESS_LED_PAD_03, PAL_MODE_OUTPUT);
 	palSetPadMode(PROGRESS_LED_PORT_04, PROGRESS_LED_PAD_04, PAL_MODE_OUTPUT);
@@ -824,7 +912,7 @@ int main(void) {
 	palSetPadMode(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09, PAL_MODE_OUTPUT);
 	//palSetPadMode(PROGRESS_LED_PORT_10, PROGRESS_LED_PAD_10, PAL_MODE_OUTPUT);
 
-	palClearPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
+	//palClearPad(PROGRESS_LED_PORT_01, PROGRESS_LED_PAD_01);
 	palClearPad(PROGRESS_LED_PORT_02, PROGRESS_LED_PAD_02);
 	palClearPad(PROGRESS_LED_PORT_03, PROGRESS_LED_PAD_03);
 	palClearPad(PROGRESS_LED_PORT_04, PROGRESS_LED_PAD_04);
@@ -836,6 +924,7 @@ int main(void) {
 	//palClearPad(PROGRESS_LED_PORT_10, PROGRESS_LED_PAD_10);
 
 	chThdCreateStatic(waThread1, sizeof(waThread1), NORMALPRIO, Thread1, NULL);
+	chThdCreateStatic(waThread2, sizeof(waThread2), NORMALPRIO, Thread2, NULL);
 
 	// Events servicing loop.
 	chThdWait(chThdSelf());
