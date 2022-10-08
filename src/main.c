@@ -24,8 +24,34 @@
 #include "shell.h"
 #include "chprintf.h"
 
+#include <stdint.h>
+
 #include "ms8607.h"
 #include "ms5840.h"
+
+// These calibration numbers must be determined by running a version of this
+// software compiled in "calibration mode" (TODO: macro name, instructions),
+// which will yield the numbers that these macros must expand to.
+//
+// These numbers are specific to each physical sensor used in the
+// device. If you change a sensor, you must recalibrate.
+//
+// The calibration must be done with all sensors experiencing identical
+// physical conditions (same pressure, temperature, humidity, etc).
+// The sure-fire way to do this is to simply place them next to each other
+// on the same bench/table/whatever, with all of them exposed to the same
+// room air.
+//
+#define CALIBRATION_FOR_MS8607  (-3254)
+#define CALIBRATION_FOR_MS5840   (3254)
+
+#define CALIBRATION_PREFIX  ("CALIBRATION_FOR_")
+
+#ifndef EARGEAR_SENSOR_CALIBRATION
+	#ifndef EARGEAR_PUMP_OPERATION
+		#define EARGEAR_PUMP_OPERATION (1)
+	#endif
+#endif
 
 // Pin allocations:
 // - Pins 2 & 3 are allocated for I2C.
@@ -58,9 +84,402 @@
 //#define PROGRESS_LED_PORT_10  GPIO19_PORT
 
 
+
 #define SHELL_WA_SIZE       THD_WA_SIZE(4096)
 
 static BaseSequentialStream *bss;
+
+#ifdef EARGEAR_SENSOR_CALIBRATION
+	#define MAX_NUM_READINGS_PER_SENSOR (1024)
+#else
+	// This can be made larger if needed.
+	// Right now it's not needed, and it'll help me flush out boundary-handling-bugs.
+	#define MAX_NUM_READINGS_PER_SENSOR (16)
+#endif
+
+static void print_thousandths(BaseSequentialStream *bss, int32_t number)
+{
+	int32_t abs = number;
+	const char *sign = "";
+	if ( number < 0 ) {
+		abs = -number;
+		sign = "-";
+	}
+	chprintf(bss, "%s%d.%d%d%d", sign, (int)(abs/1000), (int)((abs/100)%10), (int)((abs/10)%10), (int)(abs%10) );
+}
+
+// Measurements are in thousandths of millibars.
+#if 0
+static int32_t ms8607_pressure_data[MAX_NUM_READINGS_PER_SENSOR];
+static int32_t ms5840_pressure_data[MAX_NUM_READINGS_PER_SENSOR];
+static size_t  ms8607_pressure_data_latest_index = MAX_NUM_READINGS_PER_SENSOR;
+static size_t  ms5840_pressure_data_latest_index = MAX_NUM_READINGS_PER_SENSOR;
+#endif
+
+typedef struct circular_buffer
+{
+	size_t   latest_index;
+	size_t   num_values;
+	int32_t  values[MAX_NUM_READINGS_PER_SENSOR];
+}
+circular_buffer;
+
+static circular_buffer  ms8607_pressure_data;
+static circular_buffer  ms5840_pressure_data;
+
+static void init_sensor_data_buffers(void)
+{
+	ms8607_pressure_data.latest_index = MAX_NUM_READINGS_PER_SENSOR;
+	ms8607_pressure_data.num_values = 0;
+
+	ms5840_pressure_data.latest_index = MAX_NUM_READINGS_PER_SENSOR;
+	ms5840_pressure_data.num_values = 0;
+}
+
+static void insert_sensor_value(circular_buffer *data, int32_t value)
+{
+	size_t i = data->latest_index;
+
+	// This avoids using the modulus operator, because we are populating the
+	// circular buffer in order from highest index to lowest, and size_t
+	// is not a signed type, nor do we want it to be. This avoids doing
+	// modulus on a negative value, and it avoids wrap-around at 0,
+	// which may-or-may-not align well with the chosen MAX_NUM_READINGS_PER_SENSOR
+	// (if we counted up, modulus could probably work if the buffer was
+	// always a power-of-2 size, but I don't want to assume that).
+	// So this is a safe/paranoid way to do things:
+	// just manually keep values in-range at all times.
+	//
+	// This choice also allows modulus to be safely used for reading from
+	// the circular buffer (assuming a small/finite number of laps); in other
+	// words it is slightly more complicated to insert into the buffer than
+	// it is to read from the buffer, which is a good trade-off, really.
+	if ( i == 0 )
+		i = MAX_NUM_READINGS_PER_SENSOR - 1;
+	else
+		i--;
+
+	data->values[i] = value;
+	data->latest_index = i;
+	if ( data->num_values < MAX_NUM_READINGS_PER_SENSOR )
+		data->num_values++;
+}
+
+#if 0
+static inline uint8_t ms8607_pressure_data_is_initialized(void) {
+	return (ms8607_pressure_data_latest_index < MAX_NUM_READINGS_PER_SENSOR);
+}
+
+static inline uint8_t ms5840_pressure_data_is_initialized(void) {
+	return (ms5840_pressure_data_latest_index < MAX_NUM_READINGS_PER_SENSOR);
+}
+
+static void initialize_pressure_data(int32_t first_reading, size_t *latest_index, int32_t *data_buffer, size_t buffer_size)
+{
+	size_t i;
+	for ( i = 0; i < buffer_size; i++ )
+		data_buffer[i] = first_reading;
+	*latest_index = 0;
+}
+
+static void ensure_ms8607_pressure_data_is_initialized(int32_t first_reading)
+{
+	if ( ms8607_pressure_data_is_initialized() )
+		return;
+
+	initialize_pressure_data(
+		first_reading,
+		&ms8607_pressure_data_latest_index,
+		ms8607_pressure_data, sizeof(ms8607_pressure_data));
+	return;
+}
+
+static void ensure_ms5840_pressure_data_is_initialized(int32_t first_reading)
+{
+	if ( ms5840_pressure_data_is_initialized() )
+		return;
+
+	initialize_pressure_data(
+		first_reading,
+		&ms5840_pressure_data_latest_index,
+		ms5840_pressure_data, sizeof(ms5840_pressure_data));
+	return;
+}
+#endif
+
+typedef struct measurement
+{
+	const char *sensor_name;
+	int32_t    uncalibrated_value;
+	int32_t    value;
+}
+measurement;
+
+static void calculate_measurement_from_ms8607_reading(measurement *m, int32_t reading)
+{
+	m->sensor_name = "MS8607";
+	m->uncalibrated_value = reading;
+
+#ifndef EARGEAR_SENSOR_CALIBRATION
+	m->value = reading + CALIBRATION_FOR_MS8607;
+#else
+	m->value = reading;
+#endif
+}
+
+static void calculate_measurement_from_ms5840_reading(measurement *m, int32_t reading)
+{
+	m->sensor_name = "MS5840";
+	m->uncalibrated_value = reading;
+
+#ifndef EARGEAR_SENSOR_CALIBRATION
+	m->value = reading + CALIBRATION_FOR_MS5840;
+#else
+	m->value = reading;
+#endif
+}
+
+static int64_t sum_sensor_data_range(BaseSequentialStream *stdout, circular_buffer  *data,  size_t start_at, size_t n)
+{
+	size_t   buffer_size = MAX_NUM_READINGS_PER_SENSOR;
+
+	// TODO: I'd like to use a proper formatter for size_t, like %zu, but
+	// I don't the 2012 version of ChibiOS supports this?
+	if ( n > data->num_values && n <= buffer_size ) {
+		chprintf(stdout,
+			"ERROR: overflow in `sum_sensor_data_range`: value of `to`, %d, is larger than number of elements, %d.\n",
+			(int)n, (int)data->num_values);
+		n = data->num_values;
+	}
+	else
+	if ( n > buffer_size ) {
+		chprintf(stdout,
+			"ERROR: overflow in `sum_sensor_data_range`: value of `to`, %d, is larger than buffer size, %d.\n",
+			(int)n, (int)buffer_size);
+		n = buffer_size;
+	}
+
+	size_t   latest = data->latest_index;
+	size_t   i;
+	int64_t  sum = 0;
+	for ( i = start_at; i < n; i++ ) {
+		sum += data->values[(latest+i) % buffer_size];
+	}
+	return sum;
+}
+
+// ifdef is used to prevent "`sum_sensor_data_n` not used" warning message.
+#ifdef EARGEAR_PUMP_OPERATION
+static int64_t sum_sensor_data_n(BaseSequentialStream *stdout, circular_buffer  *data,  size_t n)
+{
+	return sum_sensor_data_range(stdout, data, 0, n);
+}
+#endif
+
+// ifdef is used to prevent "`sum_sensor_data` not used" warning message.
+#ifdef EARGEAR_SENSOR_CALIBRATION
+static int64_t sum_sensor_data(BaseSequentialStream *stdout, circular_buffer  *data)
+{
+	return sum_sensor_data_range(stdout, data, 0, data->num_values);
+}
+#endif
+
+#define intN_minimum(a,b)  (((a) > (b)) ? (b) : (a))
+
+#ifdef EARGEAR_SENSOR_CALIBRATION
+static void on_pressure_measurement(BaseSequentialStream *stdout, const measurement *m)
+{
+	chprintf(stdout, "\n");
+
+	chprintf(stdout, "New pressure reading from %s: ", m->sensor_name);
+	print_thousandths(stdout, m->uncalibrated_value);
+	chprintf(stdout,      " mbar (uncalibrated)\n\n");
+
+	int64_t  ms8607_sum = sum_sensor_data(stdout, &ms8607_pressure_data);
+	int64_t  ms5840_sum = sum_sensor_data(stdout, &ms5840_pressure_data);
+	int64_t  ms8607_count = ms8607_pressure_data.num_values;
+	int64_t  ms5840_count = ms5840_pressure_data.num_values;
+
+	int32_t  ms8607_avg = (int32_t)(ms8607_sum / ms8607_count);
+	int32_t  ms5840_avg = (int32_t)(ms5840_sum / ms5840_count);
+	int32_t  all_sensor_avg = (int32_t)((ms8607_sum + ms5840_sum)/(ms8607_count + ms5840_count));
+
+	int32_t  ms8607_offset = all_sensor_avg - ms8607_avg;
+	int32_t  ms5840_offset = all_sensor_avg - ms5840_avg;
+	chprintf(stdout, "Calibration value for %sMS8607 is (%d), taken from %d samples\n", CALIBRATION_PREFIX, (int)ms8607_offset, (int)ms8607_count);
+	chprintf(stdout, "Calibration value for %sMS5840 is (%d), taken from %d samples\n", CALIBRATION_PREFIX, (int)ms5840_offset, (int)ms5840_count);
+}
+#endif
+
+#ifdef EARGEAR_PUMP_OPERATION
+static uint8_t  pump_on = 0;
+static void on_pressure_measurement(BaseSequentialStream *stdout, const measurement *m)
+{
+	int32_t target_pressure_latest   = 0;
+	int32_t target_pressure_filtered = 0;
+	int32_t chamber_pressure_latest   = 0;
+	int32_t chamber_pressure_filtered = 0;
+
+	size_t  ms5840_count = ms5840_pressure_data.num_values;
+	size_t  ms8607_count = ms8607_pressure_data.num_values;
+	size_t  lowest_count = intN_minimum(ms8607_count, ms5840_count);
+	if ( lowest_count == 0 )
+	{
+		if ( ms8607_count + ms5840_count == 0 )
+			chprintf(stdout, "ERROR: `on_pressure_measurement` called when there are no pressure measurements.\n");
+		else
+			chprintf(stdout, "on_pressure_measurement: Measurement received, but not all sensors have reported yet. Still warming up.\n");
+		return;
+	}
+
+	target_pressure_latest  = ms5840_pressure_data.values[ms5840_pressure_data.latest_index];
+	chamber_pressure_latest = ms8607_pressure_data.values[ms8607_pressure_data.latest_index];
+
+	if ( lowest_count < 4 ) // and > 0
+	{
+		// We'll just use the latest reading for the first 4 readings.
+		// This would give us noisy data, but we only have to live with it
+		// for a miniscule amount of time (just 4 measurements).
+		target_pressure_filtered  = target_pressure_latest;
+		chamber_pressure_filtered = chamber_pressure_latest;
+	}
+	else
+	if ( lowest_count < 8 ) // and >= 4
+	{
+		// We have at least 4 measurements.
+		// They are all pretty recent, so we just average them.
+		size_t n = 4;
+		int64_t  ms5840_sum = sum_sensor_data_n(stdout, &ms5840_pressure_data, n);
+		int64_t  ms8607_sum = sum_sensor_data_n(stdout, &ms8607_pressure_data, n);
+		target_pressure_filtered  = ms5840_sum / n;
+		chamber_pressure_filtered = ms8607_sum / n;
+	}
+	else
+	// if ( lowest_count >= 8 )
+	{
+		// Now that we have more data, we include some older measurements,
+		// but give them lower weight.
+		// This will further helps smooth things out, but still allow the
+		// value to respond rapidly if things change quickly.
+		// (This is like an exponentially-weighted moving average, but much
+		// simpler and more approximate.)
+		size_t n = 4;
+		int64_t  ms5840_sum_0 = sum_sensor_data_range(stdout, &ms5840_pressure_data, n*0, n);
+		int64_t  ms8607_sum_0 = sum_sensor_data_range(stdout, &ms8607_pressure_data, n*0, n);
+		int64_t  ms5840_sum_1 = sum_sensor_data_range(stdout, &ms5840_pressure_data, n*1, n);
+		int64_t  ms8607_sum_1 = sum_sensor_data_range(stdout, &ms8607_pressure_data, n*1, n);
+		target_pressure_filtered  = (ms5840_sum_0*3 + ms5840_sum_1*1)/(n*(3+1));
+		chamber_pressure_filtered = (ms8607_sum_0*3 + ms8607_sum_1*1)/(n*(3+1));
+	}
+
+	chprintf(stdout, "\n");
+
+	chprintf(stdout, "Pressure reading from %s: ", m->sensor_name);
+	print_thousandths(stdout, m->value);
+	chprintf(stdout,     " mbar   (");
+	print_thousandths(stdout, m->uncalibrated_value);
+	chprintf(stdout,     " mbar, uncalibrated)\n");
+
+	chprintf(stdout, "Effective target (CPAP) pressure:  ");
+	print_thousandths(stdout, target_pressure_filtered);
+	chprintf(stdout,     " mbar   (");
+	print_thousandths(stdout, target_pressure_latest);
+	chprintf(stdout,     " mbar, latest, calibrated)\n");
+
+	chprintf(stdout, "Effective chamber (ear) pressure:  ");
+	print_thousandths(stdout, chamber_pressure_filtered);
+	chprintf(stdout,     " mbar   (");
+	print_thousandths(stdout, chamber_pressure_latest);
+	chprintf(stdout,     " mbar, latest, calibrated)\n");
+
+	int32_t pressure_diff = chamber_pressure_filtered - target_pressure_filtered;
+	chprintf(stdout, "Pressure difference:               ");
+	print_thousandths(stdout, pressure_diff);
+	chprintf(stdout,     " mbar\n");
+
+#if 0
+	// TODO: Figure out what this should be.
+	// (Smoothing the sensor inputs could allow us to reduce this number somewhat,
+	// simply because repeated measurements tend to converge on expectation values...)
+	int32_t margin_for_error_ubar = 300; // microbar (thousandths of mbar)
+
+	if ( pressure_diff > margin_for_error_ubar )
+		pump_on = 1;
+	else
+		pump_on = 0;
+#endif
+
+	// TODO: This is just for testing.
+	// (The "CPAP" sensor will be at atmospheric pressure, and we want to see
+	// if the pump can be drive a small chamber up to 20.000 mbar.)
+
+	if ( pressure_diff < 20000 )
+		pump_on = 1;
+	else
+		pump_on = 0;
+
+	chprintf(stdout, "Pump set to ON?                    ");
+	if ( pump_on )
+		chprintf(stdout, "YES\n");
+	else
+		chprintf(stdout, "NO\n");
+}
+#endif
+
+
+static void handle_ms8607_pressure_reading(BaseSequentialStream *stdout, int32_t reading)
+{
+	measurement m;
+	calculate_measurement_from_ms8607_reading(&m, reading);
+	insert_sensor_value(&ms8607_pressure_data, m.value);
+	on_pressure_measurement(stdout, &m);
+}
+
+static void handle_ms5840_pressure_reading(BaseSequentialStream *stdout, int32_t reading)
+{
+	measurement m;
+	calculate_measurement_from_ms5840_reading(&m, reading);
+	insert_sensor_value(&ms5840_pressure_data, m.value);
+	on_pressure_measurement(stdout, &m);
+}
+
+
+#if 0
+// unused?
+static int64_t ticks2microsecs(systime_t ticks)
+{
+	// 100 seconds worth of microseconds, in system ticks.
+	static int64_t hundred_microsecs_as_ticks = 0;
+	if ( hundred_microsecs_as_ticks == 0 )
+		hundred_microsecs_as_ticks = US2ST(100L);
+
+	int64_t tmp_ticks = ticks;
+	int64_t microsecs = (tmp_ticks*100LL)/hundred_microsecs_as_ticks;
+	return microsecs;
+}
+#endif
+
+// TODO: how much wrap-around threat?
+static systime_t  system_time_at_zero = 0;
+
+static void calculate_system_time_reference(void)
+{
+	system_time_at_zero = chTimeNow();
+}
+
+#if 0
+// unused?
+static int64_t calculate_system_time_in_usecs(void)
+{
+	systime_t      time_now;
+	int64_t        usecs;
+
+	time_now = chTimeNow();
+	usecs = ticks2microsecs(time_now - system_time_at_zero);
+
+	return usecs;
+}
+#endif
 
 #define I2C_EXPANDER_ADDR ((i2caddr_t)0x70)
 
@@ -92,6 +511,7 @@ static void i2c_driver_meta_init(
 	this->last_i2c_expander_port_selection_bits = 0;
 }
 
+#if 0
 static void i2c_print_port_selection_bits(BaseSequentialStream *stdout, uint8_t bits)
 {
 	for ( int16_t bit_index = 7; bit_index >= 0; bit_index-- )
@@ -103,6 +523,7 @@ static void i2c_print_port_selection_bits(BaseSequentialStream *stdout, uint8_t 
 			chprintf(stdout, "0");
 	}
 }
+#endif
 
 static i2cflags_t i2c_controller_mux(i2c_context *target, char T_or_R)
 {
@@ -120,12 +541,14 @@ static i2cflags_t i2c_controller_mux(i2c_context *target, char T_or_R)
 		uint8_t     txbuf[1];
 		uint8_t     rxbuf[1];
 
+		#if 0
 		chprintf(meta->stdout, "I2C.TCA9548A: (INFO)  I2C multiplexer select bits changing:\n");
 		chprintf(meta->stdout, "    ");
 		i2c_print_port_selection_bits(meta->stdout, meta->last_i2c_expander_port_selection_bits);
 		chprintf(meta->stdout, " -> ");
 		i2c_print_port_selection_bits(meta->stdout, target->i2c_expander_port_selection_bits);
 		chprintf(meta->stdout, "\n");
+		#endif
 
 		txbuf[0] = target->i2c_expander_port_selection_bits;
 		stat = i2cMasterTransmit(
@@ -536,9 +959,8 @@ void chibi_ms5840_assign_functions(ms5840_host_functions *deps, void *caller_con
 	deps->print_int64                  = &print_int64_ms5840;
 }
 
-
 static WORKING_AREA(waThread1, 16384);
-static msg_t Thread1(void *p)
+static msg_t  thread_main_for_i2c_sensors(void *p)
 {
 #if 0
 	msg_t       stat;
@@ -548,7 +970,7 @@ static msg_t Thread1(void *p)
 #endif
 
 	(void)p;
-	chRegSetThreadName("i2c");
+	chRegSetThreadName("i2c_sensors");
 
 	I2CDriver        *i2c_driver = &I2CD1;
 	i2c_driver_meta  i2c_meta;
@@ -731,9 +1153,9 @@ static msg_t Thread1(void *p)
 	palSetPad(PROGRESS_LED_PORT_06, PROGRESS_LED_PAD_06);
 
 	while (TRUE) {
-		int32_t temperature = 0; // degC
-		int32_t pressure    = 0; // mbar
-		int32_t humidity    = 0; // %RH
+		int32_t temperature = 0; // thousandths of degC
+		int32_t pressure    = 0; // thousandths of mbar
+		int32_t humidity    = 0; // thousandths of %RH
 
 		palClearPad(PROGRESS_LED_PORT_07, PROGRESS_LED_PAD_07);
 		palClearPad(PROGRESS_LED_PORT_08, PROGRESS_LED_PAD_08);
@@ -758,11 +1180,12 @@ static msg_t Thread1(void *p)
 			chprintf(bss, "I2C.MS5840: (INFO)  TP data received:\n");
 			chprintf(bss, "    Temperature = %d.%d%d%d degC\n", (int)(temperature/1000), (int)((temperature/100)%10), (int)((temperature/10)%10), (int)(temperature%10) );
 			chprintf(bss, "    Pressure    = %d.%d%d%d mbar\n", (int)(pressure/1000),    (int)((pressure/100)%10),    (int)((pressure/10)%10),    (int)(pressure%10) );
+			handle_ms5840_pressure_reading(bss, pressure);
 		}
 
-		temperature = 0; // degC
-		pressure    = 0; // mbar
-		humidity    = 0; // %RH
+		temperature = 0; // thousandths of degC
+		pressure    = 0; // thousandths of mbar
+		humidity    = 0; // thousandths of %RH
 
 		chprintf(bss, "\n");
 		chprintf(bss, "I2C.MS8607: (INFO)  Retrieving TPH (temperature-pressure-humidity) readings.\n");
@@ -784,8 +1207,9 @@ static msg_t Thread1(void *p)
 			chprintf(bss, "    Temperature = %d.%d%d%d degC\n", (int)(temperature/1000), (int)((temperature/100)%10), (int)((temperature/10)%10), (int)(temperature%10) );
 			chprintf(bss, "    Pressure    = %d.%d%d%d mbar\n", (int)(pressure/1000),    (int)((pressure/100)%10),    (int)((pressure/10)%10),    (int)(pressure%10) );
 			chprintf(bss, "    Humidity    = %d.%d%d%d %%RH\n", (int)(humidity/1000),    (int)((humidity/100)%10),    (int)((humidity/10)%10),    (int)(humidity%10) );
+			handle_ms8607_pressure_reading(bss, pressure);
 		}
-		chThdSleepMilliseconds(1000);
+		//chThdSleepMilliseconds(1000);
 	}
 
 	// poor i2cStop statement can never execute.
@@ -793,7 +1217,7 @@ static msg_t Thread1(void *p)
 	return 0;
 }
 
-
+#ifdef EARGEAR_PUMP_OPERATION
 // This demo does a frequency sweep with PWM on GPIO18.
 //
 // It uses 50% duty cycle always.
@@ -829,10 +1253,10 @@ static void set_pwm_config_freq_on_bcm2835(PWMConfig *config, uint32_t target_fr
 	config->period = config->frequency / target_freq;
 }
 
-static WORKING_AREA(waThread2, 128);
-static msg_t Thread2(void *p) {
+static WORKING_AREA(waThread2, 16384);
+static msg_t  thread_main_for_pump_control(void *p) {
 	(void)p;
-	chRegSetThreadName("pwm");
+	chRegSetThreadName("pump_control");
 
 	// NOTE: The PWM driver hardcodes the use of pin 18 on the BCM2835
 	//   as the PWM pin. Thus, these couple functions will set GPIO18's
@@ -845,42 +1269,127 @@ static msg_t Thread2(void *p) {
 
 	// muRata MZB3004T04 resonant frequency range is 21.5kHz to 24.5kHz.
 	// So we'll start at the bottom of that range and sweep up to the top.
-	uint32_t freq = 21500; // in Hz
+	//uint32_t freq_bottom = 21500; // in Hz
+	//uint32_t freq_top    = 24500; // in Hz
+	uint32_t freq        = 23000; // in Hz
 	set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
 
-	pwmStart(&PWMD1, &pwm_config);
-	PWM_CTL |= PWM0_MODE_MS;
-	pwmEnableChannel(&PWMD1, 0, PWM_PERCENTAGE_TO_WIDTH(&PWMD1, duty_cycle));
+#if 0
+	// muRata MZB1001T02 resonant frequency range is 24.0kHz to 27.0kHz.
+	// So we'll start at the bottom of that range and sweep up to the top.
+	//uint32_t freq_bottom = 24000; // in Hz
+	//uint32_t freq_top    = 27000; // in Hz
+	uint32_t freq        = 25500; // in Hz
+	set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
+#endif
+
+	uint8_t pump_was_on = 0;
 
 	while (TRUE) {
-		palClearPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
-		chThdSleepMilliseconds(200);
-		palSetPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
-		chThdSleepMilliseconds(1800);
+		if ( pump_on && !pump_was_on )
+		{
+			pwmStart(&PWMD1, &pwm_config);
+			PWM_CTL |= PWM0_MODE_MS;
+			pwmEnableChannel(&PWMD1, 0, PWM_PERCENTAGE_TO_WIDTH(&PWMD1, duty_cycle));
 
-		// Change frequency.
-		pwmDisableChannel(&PWMD1, 0);
-		pwmStop(&PWMD1);
+			palSetPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
+			pump_was_on = 1;
+		}
+		else
+		if ( !pump_on && pump_was_on )
+		{
+			pump_was_on = 0;
+			palClearPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
 
-		freq += 250;
-		if ( freq > 24500 )
-			freq = 21500;
+			pwmDisableChannel(&PWMD1, 0);
+			pwmStop(&PWMD1);
 
-		set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
-		BaseSequentialStream *output_stream = (BaseSequentialStream *)&SD1;
-		chprintf(output_stream, "pwm_config->period   == %d\r\n", pwm_config.period);
-		chprintf(output_stream, "pwm target frequency == %d\r\n", freq);
-		chprintf(output_stream, "pwm result frequency == %d\r\n", pwm_config.frequency / pwm_config.period);
+			// debounce: prevent cycling the pump at weird frequencies
+			chThdSleepMilliseconds(2000);
+		}
+		else
+		if ( pump_on && pump_was_on )
+		{
+			palClearPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
+			chThdSleepMilliseconds(200);
+			palSetPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
+			chThdSleepMilliseconds(1800);
 
-		pwmStart(&PWMD1, &pwm_config);
-		PWM_CTL |= PWM0_MODE_MS;
-		pwmEnableChannel(&PWMD1, 0, PWM_PERCENTAGE_TO_WIDTH(&PWMD1, duty_cycle));
+#if 0
+			// Change frequency.
+			pwmDisableChannel(&PWMD1, 0);
+			pwmStop(&PWMD1);
+
+			freq += 250;
+			if ( freq > freq_top )
+				freq = freq_bottom;
+
+			set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
+			BaseSequentialStream *output_stream = (BaseSequentialStream *)&SD1;
+			chprintf(output_stream, "pwm_config->period   == %d\r\n", pwm_config.period);
+			chprintf(output_stream, "pwm target frequency == %d\r\n", freq);
+			chprintf(output_stream, "pwm result frequency == %d\r\n", pwm_config.frequency / pwm_config.period);
+
+			pwmStart(&PWMD1, &pwm_config);
+			PWM_CTL |= PWM0_MODE_MS;
+			pwmEnableChannel(&PWMD1, 0, PWM_PERCENTAGE_TO_WIDTH(&PWMD1, duty_cycle));
+#endif
+		}
+		// else
+		// if ( !pump_on && !pump_was_on )
+		// { do nothing }
 	}
 
 	pwmDisableChannel(&PWMD1, 0);
 	pwmStop(&PWMD1);
 	return 0;
 }
+#endif // EARGEAR_PUMP_OPERATION
+
+#if 0
+// For the time being, it has been easier to implement this by modifying
+// the internals of functions like `on_pressure_measurement` (called indirectly
+// from the `thread_main_for_i2c_sensors` thread) than it has been
+// to implement the below `thread_main_for_sensor_calibration` thread.
+// Nonetheless, the below comment on calibration is probably my better
+// explanation of why we do calibration, so I am leaving this comment around.
+
+#ifdef EARGEAR_SENSOR_CALIBRATION
+// We can program the chip to run in a "calibration" mode that takes readings
+// from the pressure sensors and then calculates offsets that can be added
+// to their readings (during normal operations) to get uniform results.
+//
+// This is necessary because the sensors used (ms8607, ms5840, etc) do not
+// have perfect accuracy, and may be off by something like 2-4 mbar each.
+//
+// Remember: 1 millibar is approximately the same as 1 cmH2O, so this
+// deviation is significant on the scale of something like CPAP treatment
+// and other biological pressures.
+//
+// We don't care if they are perfect on an absolute scale, but we do need them
+// to be within, say, 1 mbar of each other when reading the same "zero"
+// at atmospheric pressure. THIS is doable, because the sensors are more
+// *precise* than they are *accurate*. So even though they might disagree
+// about what room-pressure is, they will do so by a consistent amount.
+// This is what allows us to use a calibration routine to bring them into
+// consistent agreement.
+//
+// Testing so far indicates that the sensors only experience about 0.1-0.2 mbar
+// of "noise" typically, with about a maximum of 0.5 mbar of noise. This should
+// be good enough for know when target-pressure has been reached, assuming
+// we've done this calibration routine.
+//
+static WORKING_AREA(waThread2, 16384);
+static msg_t  thread_main_for_sensor_calibration(void *p) {
+	(void)p;
+	chRegSetThreadName("calibration_output");
+
+//TODO: implement this
+
+	return 0;
+}
+#endif
+#endif
 
 /// Application entry point.
 int main(void) {
@@ -923,8 +1432,20 @@ int main(void) {
 	palClearPad(PROGRESS_LED_PORT_09, PROGRESS_LED_PAD_09);
 	//palClearPad(PROGRESS_LED_PORT_10, PROGRESS_LED_PAD_10);
 
-	chThdCreateStatic(waThread1, sizeof(waThread1), NORMALPRIO, Thread1, NULL);
-	chThdCreateStatic(waThread2, sizeof(waThread2), NORMALPRIO, Thread2, NULL);
+	calculate_system_time_reference();
+	init_sensor_data_buffers();
+
+	//(void)calculate_system_time_in_usecs();
+
+	chThdCreateStatic(waThread1, sizeof(waThread1), NORMALPRIO, thread_main_for_i2c_sensors, NULL);
+
+#ifdef EARGEAR_PUMP_OPERATION
+	chThdCreateStatic(waThread2, sizeof(waThread2), NORMALPRIO, thread_main_for_pump_control, NULL);
+#endif
+
+//#ifdef EARGEAR_SENSOR_CALIBRATION
+//	chThdCreateStatic(waThread2, sizeof(waThread2), NORMALPRIO, thread_main_for_sensor_calibration, NULL);
+//#endif
 
 	// Events servicing loop.
 	chThdWait(chThdSelf());

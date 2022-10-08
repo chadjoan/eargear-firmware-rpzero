@@ -170,7 +170,8 @@ CPPWARN = -Wall -Wextra
 #
 
 # List all default C defines here, like -D_DEBUG=1
-DDEFS =
+DDEFS = -DEARGEAR_PUMP_OPERATION=1
+#DDEFS = -DEARGEAR_SENSOR_CALIBRATION=1
 
 # List all default ASM defines here, like -D_DEBUG=1
 DADEFS =
