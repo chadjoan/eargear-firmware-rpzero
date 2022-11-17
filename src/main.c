@@ -311,8 +311,10 @@ static int64_t sum_sensor_data_range(BaseSequentialStream *stdout, circular_buff
 	size_t   latest = data->latest_index;
 	size_t   i;
 	int64_t  sum = 0;
-	for ( i = start_at; i < n; i++ ) {
-		sum += data->values[(latest+i) % buffer_size];
+	size_t   end_at = start_at + n;
+	for ( i = start_at; i < end_at; i++ ) {
+		int64_t value = data->values[(latest+i) % buffer_size];
+		sum += value;
 	}
 	return sum;
 }
