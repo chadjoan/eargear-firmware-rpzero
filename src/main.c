@@ -42,8 +42,8 @@
 // on the same bench/table/whatever, with all of them exposed to the same
 // room air.
 //
-#define CALIBRATION_FOR_MS8607  (-3254)
-#define CALIBRATION_FOR_MS5840   (3254)
+#define CALIBRATION_FOR_MS8607  (-2680)
+#define CALIBRATION_FOR_MS5840   (2680)
 
 #define CALIBRATION_PREFIX  ("CALIBRATION_FOR_")
 
