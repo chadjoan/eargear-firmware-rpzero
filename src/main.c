@@ -47,6 +47,9 @@
 
 #define CALIBRATION_PREFIX  ("CALIBRATION_FOR_")
 
+static uint32_t pump_drive_resonant_frequency = 23000;
+static PWMConfig pwm_config;
+
 #ifndef EARGEAR_SENSOR_CALIBRATION
 	#ifndef EARGEAR_PUMP_OPERATION
 		#define EARGEAR_PUMP_OPERATION (1)
@@ -107,6 +110,52 @@ static void print_thousandths(BaseSequentialStream *bss, int32_t number)
 	}
 	chprintf(bss, "%s%d.%d%d%d", sign, (int)(abs/1000), (int)((abs/100)%10), (int)((abs/10)%10), (int)(abs%10) );
 }
+
+
+#if 0
+/// Returns the result of `(a - b)`,
+static systime_t subtract_wrap_saturate(systime_t a, systime_b)
+{
+}
+
+#define subtract_wrap_saturate(a,b) ( \
+	(sizeof(a) == 8 || sizeof(b) == 8) ? subtract_wrap_saturate_64((uint64_t)(a), (uint64_t)(b)) : \
+	(sizeof(a) == 4 || sizeof(b) == 4) ? subtract_wrap_saturate_32((uint32_t)(a), (uint32_t)(b)) : \
+	(sizeof(a) == 2 || sizeof(b) == 2) ? subtract_wrap_saturate_16((uint16_t)(a), (uint16_t)(b)) : \
+	subtract_wrap_saturate_8((uint8_t)(a), (uint8_t)(b)) )
+#endif
+
+static uint64_t ticks2microsecs(systime_t ticks)
+{
+	// 100 seconds worth of microseconds, in system ticks.
+	static int64_t hundred_microsecs_as_ticks = 0;
+	if ( hundred_microsecs_as_ticks == 0 )
+		hundred_microsecs_as_ticks = US2ST(100L);
+
+	int64_t tmp_ticks = ticks;
+	int64_t microsecs = (tmp_ticks*100LL)/hundred_microsecs_as_ticks;
+	return (uint64_t)microsecs;
+}
+
+// TODO: how much wrap-around threat?
+static systime_t  system_time_at_zero = 0;
+
+static void calculate_system_time_reference(void)
+{
+	system_time_at_zero = chTimeNow();
+}
+
+static uint64_t calculate_system_time_in_usecs(void)
+{
+	systime_t      time_now;
+	uint64_t       usecs;
+
+	time_now = chTimeNow();
+	usecs = ticks2microsecs(time_now - system_time_at_zero);
+
+	return usecs;
+}
+
 
 // Measurements are in thousandths of millibars.
 #if 0
@@ -312,6 +361,8 @@ static void on_pressure_measurement(BaseSequentialStream *stdout, const measurem
 #endif
 
 #ifdef EARGEAR_PUMP_OPERATION
+static uint64_t last_time = 0;
+static uint8_t  time_started = 0;
 static uint8_t  pump_on = 0;
 static void on_pressure_measurement(BaseSequentialStream *stdout, const measurement *m)
 {
@@ -374,11 +425,19 @@ static void on_pressure_measurement(BaseSequentialStream *stdout, const measurem
 
 	chprintf(stdout, "\n");
 
+	uint64_t time_now = calculate_system_time_in_usecs();
+	if ( time_started == 0 ) {
+		last_time = time_now;
+		time_started = 1;
+	}
+
 	chprintf(stdout, "Pressure reading from %s: ", m->sensor_name);
 	print_thousandths(stdout, m->value);
 	chprintf(stdout,     " mbar   (");
 	print_thousandths(stdout, m->uncalibrated_value);
-	chprintf(stdout,     " mbar, uncalibrated)\n");
+	chprintf(stdout,     " mbar, uncalibrated)");
+	chprintf(stdout,     " at time %d usecs", time_now);
+	chprintf(stdout,     "\n");
 
 	chprintf(stdout, "Effective target (CPAP) pressure:  ");
 	print_thousandths(stdout, target_pressure_filtered);
@@ -396,6 +455,18 @@ static void on_pressure_measurement(BaseSequentialStream *stdout, const measurem
 	chprintf(stdout, "Pressure difference:               ");
 	print_thousandths(stdout, pressure_diff);
 	chprintf(stdout,     " mbar\n");
+
+	uint64_t time_diff = time_now - last_time;
+	chprintf(stdout, "Time difference (ms):              ");
+	print_thousandths(stdout, (uint32_t)time_diff);
+	chprintf(stdout,     "\n");
+
+#if 0
+	// Output that can be used to find the best drive-resonant-frequency.
+	//chprintf(stdout, "pwm_config->period   == %d\r\n", pwm_config.period);
+	chprintf(stdout, "pwm target frequency == %d\r\n", pump_drive_resonant_frequency);
+	chprintf(stdout, "pwm result frequency == %d\r\n", pwm_config.frequency / pwm_config.period);
+#endif
 
 #if 0
 	// TODO: Figure out what this should be.
@@ -442,44 +513,6 @@ static void handle_ms5840_pressure_reading(BaseSequentialStream *stdout, int32_t
 	insert_sensor_value(&ms5840_pressure_data, m.value);
 	on_pressure_measurement(stdout, &m);
 }
-
-
-#if 0
-// unused?
-static int64_t ticks2microsecs(systime_t ticks)
-{
-	// 100 seconds worth of microseconds, in system ticks.
-	static int64_t hundred_microsecs_as_ticks = 0;
-	if ( hundred_microsecs_as_ticks == 0 )
-		hundred_microsecs_as_ticks = US2ST(100L);
-
-	int64_t tmp_ticks = ticks;
-	int64_t microsecs = (tmp_ticks*100LL)/hundred_microsecs_as_ticks;
-	return microsecs;
-}
-#endif
-
-// TODO: how much wrap-around threat?
-static systime_t  system_time_at_zero = 0;
-
-static void calculate_system_time_reference(void)
-{
-	system_time_at_zero = chTimeNow();
-}
-
-#if 0
-// unused?
-static int64_t calculate_system_time_in_usecs(void)
-{
-	systime_t      time_now;
-	int64_t        usecs;
-
-	time_now = chTimeNow();
-	usecs = ticks2microsecs(time_now - system_time_at_zero);
-
-	return usecs;
-}
-#endif
 
 #define I2C_EXPANDER_ADDR ((i2caddr_t)0x70)
 
@@ -1269,18 +1302,20 @@ static msg_t  thread_main_for_pump_control(void *p) {
 
 	// muRata MZB3004T04 resonant frequency range is 21.5kHz to 24.5kHz.
 	// So we'll start at the bottom of that range and sweep up to the top.
-	//uint32_t freq_bottom = 21500; // in Hz
-	//uint32_t freq_top    = 24500; // in Hz
-	uint32_t freq        = 23000; // in Hz
-	set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
+	pump_drive_resonant_frequency
+	                     = 23300; // in Hz
+	uint32_t freq_bottom = 21750; // in Hz
+	uint32_t freq_top    = 24250; // in Hz
+	set_pwm_config_freq_on_bcm2835(&pwm_config, pump_drive_resonant_frequency);
 
 #if 0
 	// muRata MZB1001T02 resonant frequency range is 24.0kHz to 27.0kHz.
 	// So we'll start at the bottom of that range and sweep up to the top.
-	//uint32_t freq_bottom = 24000; // in Hz
-	//uint32_t freq_top    = 27000; // in Hz
-	uint32_t freq        = 25500; // in Hz
-	set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
+	pump_drive_resonant_frequency
+	                     = 25500; // in Hz
+	uint32_t freq_bottom = 24000; // in Hz
+	uint32_t freq_top    = 27000; // in Hz
+	set_pwm_config_freq_on_bcm2835(&pwm_config, pump_drive_resonant_frequency);
 #endif
 
 	uint8_t pump_was_on = 0;
@@ -1315,20 +1350,29 @@ static msg_t  thread_main_for_pump_control(void *p) {
 			palSetPad(ONBOARD_LED_PORT, ONBOARD_LED_PAD);
 			chThdSleepMilliseconds(1800);
 
+			(void)freq_bottom;
+			(void)freq_top;
 #if 0
+			// Extra delay for when we need time for the pressure in the
+			// test chamber to adjust to the last frequency change.
+			chThdSleepMilliseconds(30000);
+
 			// Change frequency.
 			pwmDisableChannel(&PWMD1, 0);
 			pwmStop(&PWMD1);
 
-			freq += 250;
-			if ( freq > freq_top )
-				freq = freq_bottom;
+			pump_drive_resonant_frequency += 250;
+			if ( pump_drive_resonant_frequency > freq_top )
+				pump_drive_resonant_frequency = freq_bottom;
 
-			set_pwm_config_freq_on_bcm2835(&pwm_config, freq);
+			set_pwm_config_freq_on_bcm2835(&pwm_config, pump_drive_resonant_frequency);
 			BaseSequentialStream *output_stream = (BaseSequentialStream *)&SD1;
+			(void)output_stream;
+			#if 0
 			chprintf(output_stream, "pwm_config->period   == %d\r\n", pwm_config.period);
-			chprintf(output_stream, "pwm target frequency == %d\r\n", freq);
+			chprintf(output_stream, "pwm target frequency == %d\r\n", pump_drive_resonant_frequency);
 			chprintf(output_stream, "pwm result frequency == %d\r\n", pwm_config.frequency / pwm_config.period);
+			#endif
 
 			pwmStart(&PWMD1, &pwm_config);
 			PWM_CTL |= PWM0_MODE_MS;
