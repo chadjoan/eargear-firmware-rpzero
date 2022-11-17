@@ -1083,15 +1083,38 @@ static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor
 		if( status != ms8607_status_ok)
 			return status;
 
-
-		// delay depending on resolution
-		sensor->host_funcs->sleep_ms(caller_context, sensor->hsensor_conversion_time/1000);
-
-		while (true)
+		// `max_tries` is the number of times we will call `i2c_controller_read`
+		// before assuming the worst and giving up (timeout condition).
+		//
+		// The choice of this number is somewhat arbitrary. As it is, the loop
+		// is set up so that it is extremely likely to complete on its first
+		// iteration. So setting `max_tries` to something low is reasonable.
+		//
+		// Rationale:
+		// Unfortunately, the Not Acknowledge bit that the ms8607 uses for
+		// telling the controller to "wait a little longer please" could also
+		// indicate that there is something wrong at a wire-level (ex: the
+		// data line is latched into the "Not Acknowledge" state). And if we're
+		// really paranoid, we can't expect the ms8607 to ever respond if it
+		// is damaged or defective. Most importantly: we should NEVER halt/hang
+		// the caller's code. So we give up if we receive NACK for too long.
+		//
+		int16_t max_tries = 3;
+		int16_t tries_remaining = max_tries;
+		while(true)
 		{
+			// delay depending on resolution
+			sensor->host_funcs->sleep_ms(caller_context, sensor->hsensor_conversion_time/1000);
+
 			status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
 			if ( status == ms8607_status_callback_i2c_nack )
-				continue; // Not ready yet. That's OK, just wait longer. TODO: Timeout calculations?
+			{
+				tries_remaining--;
+				if ( tries_remaining > 0 )
+					continue; // Not ready yet. That's OK, just wait longer.
+				else
+					return status; // Timeout: we waited too long while receiving only NACK.
+			}
 			else
 			if ( status == ms8607_status_ok )
 				break;
