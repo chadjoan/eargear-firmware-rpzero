@@ -484,7 +484,7 @@ static void on_pressure_measurement(BaseSequentialStream *stdout, const measurem
 	// (The "CPAP" sensor will be at atmospheric pressure, and we want to see
 	// if the pump can be drive a small chamber up to 20.000 mbar.)
 
-	if ( pressure_diff < 20000 )
+	if ( pressure_diff < 400000 )
 		pump_on = 1;
 	else
 		pump_on = 0;
