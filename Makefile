@@ -86,8 +86,8 @@ CSRC = $(PORTSRC) \
        $(BOARDSRC) \
        ${CHIBIOS}/os/various/shell.c \
        ${CHIBIOS}/os/various/chprintf.c \
-       depends/drivers/MS5840/ms5840.c \
-       depends/drivers/MS8607/ms8607.c \
+       depends/drivers/te-sensor-drivers-pht/ms5840.c \
+       depends/drivers/te-sensor-drivers-pht/ms8607.c \
        src/main.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
@@ -121,8 +121,7 @@ INCDIR = src \
          $(PORTINC) $(KERNINC) $(TESTINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) \
          $(CHIBIOS)/os/various \
-         depends/drivers/MS5840 \
-         depends/drivers/MS8607
+         depends/drivers/te-sensor-drivers-pht
 
 #
 # Project, sources and paths
