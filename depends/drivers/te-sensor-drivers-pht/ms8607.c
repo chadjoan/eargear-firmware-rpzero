@@ -12,6 +12,7 @@
 #include "ms8607.h"
 
 #include <assert.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -119,55 +120,92 @@ static uint32_t psensor_conversion_time[6] = {
 
 // Static functions
 // humidity sensor functions
-static enum ms8607_status hsensor_reset(ms8607_sensor *sensor, void *caller_context);
-static bool hsensor_is_connected(ms8607_sensor *sensor, void *caller_context);
-static enum ms8607_status hsensor_write_command(ms8607_sensor *sensor, uint8_t, void *caller_context);
-static enum ms8607_status hsensor_write_command_no_stop(ms8607_sensor *sensor, uint8_t, void *caller_context);
-static enum ms8607_status hsensor_crc_check( uint16_t, uint8_t);
-static enum ms8607_status hsensor_write_user_register(ms8607_sensor *sensor, uint8_t, void *caller_context);
-static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor *sensor, uint16_t *, void *caller_context);
-static enum ms8607_status hsensor_read_relative_humidity(ms8607_sensor *sensor, int32_t *, void *caller_context);
+static tepht_error_info  hsensor_reset(ms8607_sensor *sensor, void *caller_context);
+static bool              hsensor_is_connected(ms8607_sensor *sensor, void *caller_context);
+static tepht_status      hsensor_write_command(ms8607_sensor *sensor, uint8_t, void *caller_context);
+static tepht_status      hsensor_write_command_no_stop(ms8607_sensor *sensor, uint8_t, void *caller_context);
+static tepht_status      hsensor_crc_check( uint16_t, uint8_t);
+static tepht_status      hsensor_read_user_register(ms8607_sensor *sensor, uint8_t *value, void *caller_context);
+static tepht_status      hsensor_write_user_register(ms8607_sensor *sensor, uint8_t value, void *caller_context);
+static tepht_error_info  hsensor_humidity_conversion_and_read_adc(ms8607_sensor *sensor, uint16_t *, void *caller_context);
+static tepht_error_info  hsensor_read_relative_humidity(ms8607_sensor *sensor, int32_t *, void *caller_context);
 
 // Pressure sensor functions
-static enum ms8607_status psensor_reset(ms8607_sensor *sensor, void *caller_context);
-static bool psensor_is_connected(ms8607_sensor *sensor, void *caller_context);
-static enum ms8607_status psensor_write_command(ms8607_sensor *sensor, uint8_t, void *caller_context);
-static enum ms8607_status psensor_read_eeprom_coeff(ms8607_sensor *sensor, uint8_t, uint16_t*, void *caller_context);
-static enum ms8607_status psensor_read_eeprom(ms8607_sensor *sensor, void *caller_context);
-static enum ms8607_status psensor_conversion_and_read_adc(ms8607_sensor *sensor, uint8_t, uint32_t *, void *caller_context);
-static bool psensor_crc_check (uint16_t *n_prom, uint8_t crc);
-static enum ms8607_status psensor_read_pressure_and_temperature(ms8607_sensor *sensor, int32_t *, int32_t *, void *caller_context);
+static tepht_error_info  psensor_reset(ms8607_sensor *sensor, void *caller_context);
+static bool              psensor_is_connected(ms8607_sensor *sensor, void *caller_context);
+static tepht_status      psensor_write_command(ms8607_sensor *sensor, uint8_t, void *caller_context);
+static tepht_error_info  psensor_read_eeprom_coeff(ms8607_sensor *sensor, uint8_t, uint16_t*, void *caller_context);
+static tepht_error_info  psensor_read_eeprom(ms8607_sensor *sensor, void *caller_context);
+static tepht_error_info  psensor_conversion_and_read_adc(ms8607_sensor *sensor, uint8_t, uint32_t *, void *caller_context);
+static bool              psensor_crc_check (uint16_t *n_prom, uint8_t crc);
+static tepht_error_info  psensor_read_pressure_and_temperature(ms8607_sensor *sensor, int32_t *, int32_t *, void *caller_context);
 
-static enum ms8607_status
+static const char *ms8607_get_device_model_name(void *ms8607_sensor) {
+	return "MS8607";
+}
+
+static const char *ms8607_get_driver_prefix(void *ms8607_sensor) {
+	return "ms8607";
+}
+
+static tepht_driver_context_accessor_vtable  ms8607_dca_vtable =
+	{
+		.get_device_model_name = ms8607_get_device_model_name,
+		.get_driver_prefix     = ms8607_get_driver_prefix
+	};
+
+static tepht_driver_context_accessor  ms8607_default_dca =
+	{
+		.self   = NULL,
+		.vtable = &ms8607_dca_vtable
+	};
+
+static inline
+	const tepht_driver_context_accessor  *ms8607_get_dca(ms8607_sensor *sensor)
+{
+	if ( sensor != NULL )
+		return &(sensor->context_accessor);
+	else
+		return &ms8607_default_dca;
+}
+
+static inline tepht_error_info  ms8607_success(ms8607_sensor *sensor) {
+	return tepht_success(ms8607_get_dca(sensor));
+}
+
+// This must be a macro to preserve __FILE__ and __LINE__ information.
+#define  ms8607_error(sensor, status)  (tepht_error(ms8607_get_dca(sensor), (status)))
+
+static tepht_status
 	i2c_controller_read_unimpl(void *caller_context, ms8607_i2c_controller_packet *const packet)
 {
 	(void)caller_context;
 	(void)packet;
-	return ms8607_status_i2c_read_unimplemented;
+	return tepht_status_i2c_read_unimplemented;
 }
 
-static enum ms8607_status
+static tepht_status
 	i2c_controller_write_unimpl(void *caller_context, ms8607_i2c_controller_packet *const packet)
 {
 	(void)caller_context;
 	(void)packet;
-	return ms8607_status_i2c_write_unimplemented;
+	return tepht_status_i2c_write_unimplemented;
 }
 
-static enum ms8607_status
+static tepht_status
 	i2c_controller_write_no_stop_unimpl(void *caller_context, ms8607_i2c_controller_packet *const packet)
 {
 	(void)caller_context;
 	(void)packet;
-	return ms8607_status_i2c_write_no_stop_unimplemented;
+	return tepht_status_i2c_write_no_stop_unimplemented;
 }
 
-static enum ms8607_status
+static tepht_status
 	sleep_ms_unimpl(void *caller_context, uint32_t milliseconds)
 {
 	(void)caller_context;
 	(void)milliseconds;
-	return ms8607_status_sleep_ms_unimplemented;
+	return tepht_status_sleep_ms_unimplemented;
 }
 
 static void print_string_stub(void *caller_context, const char *text)
@@ -187,10 +225,10 @@ static void print_int64_stub(void *caller_context,  int64_t number, uint8_t pad_
 /// \brief Initializes the `ms8607_host_functions` struct; this should be called
 ///        *before* assigning function pointers into the structure.
 ///
-static enum ms8607_status ms8607_init_host_functions(ms8607_host_functions *deps)
+static tepht_error_info ms8607_init_host_functions(ms8607_host_functions *deps)
 {
 	if ( deps == NULL )
-		return ms8607_status_null_argument;
+		return ms8607_error(NULL, tepht_status_null_argument);
 
 	deps->validated_ = 0;
 
@@ -201,23 +239,23 @@ static enum ms8607_status ms8607_init_host_functions(ms8607_host_functions *deps
 	deps->print_string                  = &print_string_stub;
 	deps->print_int64                   = &print_int64_stub;
 
-	return ms8607_status_ok;
+	return ms8607_success(NULL);
 }
 
-static enum ms8607_status  ms8607_validate_mandatory_depends(ms8607_host_functions *deps)
+static tepht_status  ms8607_validate_mandatory_depends(ms8607_host_functions *deps)
 {
 	assert(deps != NULL);
 
 	if ( deps->validated_ )
-		return ms8607_status_ok;
+		return tepht_status_ok;
 
 	if ( deps->i2c_controller_read == NULL
 	||   deps->i2c_controller_read == &i2c_controller_read_unimpl )
-		return ms8607_status_i2c_read_unimplemented;
+		return tepht_status_i2c_read_unimplemented;
 	else
 	if ( deps->i2c_controller_write == NULL
 	||   deps->i2c_controller_write == &i2c_controller_write_unimpl )
-		return ms8607_status_i2c_write_unimplemented;
+		return tepht_status_i2c_write_unimplemented;
 	/*
 	// It's actually OK to be missing the `i2c_controller_write_no_stop` function.
 	// The write-no-stop function is only needed for hold-mode ADC.
@@ -231,12 +269,12 @@ static enum ms8607_status  ms8607_validate_mandatory_depends(ms8607_host_functio
 	else
 	if ( deps->i2c_controller_write_no_stop == NULL
 	||   deps->i2c_controller_write_no_stop == &i2c_controller_write_no_stop_unimpl )
-		return ms8607_status_i2c_write_no_stop_unimplemented;
+		return tepht_status_i2c_write_no_stop_unimplemented;
 	*/
 	else
 	if ( deps->sleep_ms == NULL
 	||   deps->sleep_ms == &sleep_ms_unimpl )
-		return ms8607_status_sleep_ms_unimplemented;
+		return tepht_status_sleep_ms_unimplemented;
 
 	// Under no condition should any of the function pointers be NULL.
 	// Even unimplemented things should be assigned error handlers or stubs
@@ -247,7 +285,7 @@ static enum ms8607_status  ms8607_validate_mandatory_depends(ms8607_host_functio
 	||  deps->sleep_ms == NULL
 	||  deps->print_string == NULL
 	||  deps->print_int64 == NULL )
-		return ms8607_status_null_host_function;
+		return tepht_status_null_host_function;
 
 	// If we've made it to the end of this function, then it is at least plausible
 	// that the driver can use this host functions object to do *something*.
@@ -255,7 +293,7 @@ static enum ms8607_status  ms8607_validate_mandatory_depends(ms8607_host_functio
 	// didn't check here. However, absent a more complicated configuration system,
 	// we'll just have to check those later, at point-of-use.)
 	deps->validated_ = 1;
-	return ms8607_status_ok;
+	return tepht_status_ok;
 }
 
 /// \brief    Creates a `ms8607_host_functions` object (the `dependencies` parameter)
@@ -314,25 +352,25 @@ static enum ms8607_status  ms8607_validate_mandatory_depends(ms8607_host_functio
 ///           Pointer to a caller-implemented function that shall assign pointers
 ///           to implementation functions that are required by the driver.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_null_argument : Returned if the `dependencies` or `assign_functions` parameters were NULL.
-///       - ms8607_status_null_host_function : Returned if NULL was assigned to any of the members of `dependencies`.
-///       - ms8607_status_i2c_read_unimplemented : Returned if the `i2c_controller_read` function was not assigned.
-///       - ms8607_status_i2c_write_unimplemented : Returned if the `i2c_controller_write` function was not assigned.
-///       - ms8607_status_sleep_ms_unimplemented : Returned if the `sleep_ms` function was not assigned.
+/// \return tepht_status : status of MS8607
+///       - tepht_status_null_argument : Returned if the `dependencies` or `assign_functions` parameters were NULL.
+///       - tepht_status_null_host_function : Returned if NULL was assigned to any of the members of `dependencies`.
+///       - tepht_status_i2c_read_unimplemented : Returned if the `i2c_controller_read` function was not assigned.
+///       - tepht_status_i2c_write_unimplemented : Returned if the `i2c_controller_write` function was not assigned.
+///       - tepht_status_sleep_ms_unimplemented : Returned if the `sleep_ms` function was not assigned.
 ///
-enum ms8607_status ms8607_init_and_assign_host_functions(
+tepht_error_info  ms8607_init_and_assign_host_functions(
 	ms8607_host_functions *dependencies,
 	void *caller_context,
 	void (*assign_functions)(ms8607_host_functions *dependencies, void *caller_context)
 	)
 {
-	enum ms8607_status status;
+	tepht_error_info  einfo;
 
 	// The call to `ms8607_init_host_functions` will enforce that `dependencies` is non-NULL.
-	status = ms8607_init_host_functions(dependencies);
-	if ( status != ms8607_status_ok )
-		return status;
+	einfo = ms8607_init_host_functions(dependencies);
+	if ( tepht_is_error(einfo) )
+		return einfo;
 
 	// It's OK if `caller_context` is NULL.
 	// Whether that's required to be non-NULL or not is up to the caller, so
@@ -345,7 +383,8 @@ enum ms8607_status ms8607_init_and_assign_host_functions(
 
 	assign_functions(dependencies, caller_context);
 
-	return ms8607_validate_mandatory_depends(dependencies);
+	tepht_status  status = ms8607_validate_mandatory_depends(dependencies);
+	return ms8607_error(NULL, status);
 }
 
 /// \brief    Initializes a new `ms8607_sensor` object.
@@ -372,43 +411,46 @@ enum ms8607_status ms8607_init_and_assign_host_functions(
 ///           functions that this sensor can call to do things such as I2C I/O
 ///           and timing.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : Sensor object was initailized successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_null_argument : The pointer provided for the `depends_to_use` parameter was NULL.
-///       - ms8607_status_i2c_read_unimplemented : Returned if the `i2c_controller_read` function was not assigned.
-///       - ms8607_status_i2c_write_unimplemented : Returned if the `i2c_controller_write` function was not assigned.
-///       - ms8607_status_sleep_ms_unimplemented : Returned if the `sleep_ms` function was not assigned.
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : Sensor object was initailized successfully
+///       - tepht_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
+///       - tepht_status_null_argument : The pointer provided for the `depends_to_use` parameter was NULL.
+///       - tepht_status_i2c_read_unimplemented : Returned if the `i2c_controller_read` function was not assigned.
+///       - tepht_status_i2c_write_unimplemented : Returned if the `i2c_controller_write` function was not assigned.
+///       - tepht_status_sleep_ms_unimplemented : Returned if the `sleep_ms` function was not assigned.
 ///
-enum ms8607_status  ms8607_init_sensor(ms8607_sensor *new_sensor,  ms8607_host_functions *depends_to_use)
+tepht_error_info  ms8607_init_sensor(ms8607_sensor *new_sensor,  ms8607_host_functions *depends_to_use)
 {
-	enum ms8607_status status;
+	tepht_status status;
 
 	if ( new_sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(new_sensor, tepht_status_null_sensor);
 
 	if ( depends_to_use == NULL )
-		return ms8607_status_null_argument;
+		return ms8607_error(new_sensor, tepht_status_null_argument);
 
 	status = ms8607_validate_mandatory_depends(depends_to_use);
-	if ( status != ms8607_status_ok )
-		return status;
+	if ( status != tepht_status_ok )
+		return ms8607_error(new_sensor, status);
 
-	ms8607_sensor *s = new_sensor;
-	s->host_funcs                  = depends_to_use;
+	ms8607_sensor  const_init_sensor = {
+		.host_funcs                  = depends_to_use,
 
-	// Defaults
-	s->hsensor_conversion_time     = HSENSOR_CONVERSION_TIME_12b;
-	s->hsensor_i2c_controller_mode = ms8607_i2c_no_hold;
-	s->psensor_resolution_osr      = ms8607_pressure_resolution_osr_8192;
-	s->hsensor_heater_on           = false;
-	s->psensor_coeff_read          = false;
+		// Defaults
+		.hsensor_conversion_time     = HSENSOR_CONVERSION_TIME_12b,
+		.hsensor_i2c_controller_mode = ms8607_i2c_no_hold,
+		.psensor_resolution_osr      = ms8607_pressure_resolution_osr_8192,
+		.hsensor_heater_on           = false,
+		.psensor_coeff_read          = false
+	};
+
+	memcpy(new_sensor, &const_init_sensor, sizeof(ms8607_sensor));
 
 	uint8_t i = 0;
 	for (; i < MS8607_COEFFICIENT_COUNT+1; i++)
-		s->eeprom_coeff[i] = 0;
+		new_sensor->eeprom_coeff[i] = 0;
 
-	return ms8607_status_ok;
+	return ms8607_success(new_sensor);
 }
 
 /// \brief Check whether MS8607 device is connected
@@ -422,12 +464,16 @@ enum ms8607_status  ms8607_init_sensor(ms8607_sensor *new_sensor,  ms8607_host_f
 ///       - true : Device is present
 ///       - false : Device is not acknowledging I2C address
 ///
-bool ms8607_is_connected(ms8607_sensor *sensor,  void *caller_context)
+tepht_bool ms8607_is_connected(ms8607_sensor *sensor,  void *caller_context)
 {
 	return (
 		hsensor_is_connected(sensor, caller_context) &&
 		psensor_is_connected(sensor, caller_context)
 	);
+}
+
+static tepht_bool  ms8607_is_connected__virtual(void *self,  void *caller_context) {
+	return ms8607_is_connected(self, caller_context);
 }
 
 // TODO:
@@ -462,26 +508,30 @@ bool ms8607_is_connected(ms8607_sensor *sensor,  void *caller_context)
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status  ms8607_reset(ms8607_sensor *sensor,  void *caller_context)
+tepht_error_info  ms8607_reset(ms8607_sensor *sensor,  void *caller_context)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
-	enum ms8607_status status;
+	tepht_error_info  einfo;
 
-	status = hsensor_reset(sensor, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
-	status = psensor_reset(sensor, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
+	einfo = hsensor_reset(sensor, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
+	einfo = psensor_reset(sensor, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
 
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
+}
+
+static tepht_error_info  ms8607_reset__virtual(void *self,  void *caller_context) {
+	return ms8607_reset(self, caller_context);
 }
 
 /// \brief Set humidity ADC resolution.
@@ -492,20 +542,20 @@ enum ms8607_status  ms8607_reset(ms8607_sensor *sensor,  void *caller_context)
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_set_humidity_resolution(
+tepht_error_info  ms8607_set_humidity_resolution(
 	ms8607_sensor                    *sensor,
 	enum ms8607_humidity_resolution  res,
 	void                             *caller_context)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t reg_value, tmp=0;
 	uint32_t conversion_time = HSENSOR_CONVERSION_TIME_12b;
 
@@ -526,9 +576,9 @@ enum ms8607_status ms8607_set_humidity_resolution(
 		conversion_time = HSENSOR_CONVERSION_TIME_11b;
 	}
 
-	status = ms8607_hsensor_read_user_register(sensor, &reg_value, caller_context);
-	if( status != ms8607_status_ok )
-		return status;
+	status = hsensor_read_user_register(sensor, &reg_value, caller_context);
+	if( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
 
 	// Clear the resolution bits
 	reg_value &= ~HSENSOR_USER_REG_RESOLUTION_MASK;
@@ -536,7 +586,11 @@ enum ms8607_status ms8607_set_humidity_resolution(
 
 	sensor->hsensor_conversion_time = conversion_time;
 
-	return hsensor_write_user_register(sensor, reg_value, caller_context);
+	status = hsensor_write_user_register(sensor, reg_value, caller_context);
+	if ( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
+
+	return ms8607_success(sensor);
 }
 
 /// \brief Set Humidity sensor ADC resolution.
@@ -550,18 +604,18 @@ enum ms8607_status ms8607_set_humidity_resolution(
 ///         does not call any host functions, so `caller_context` is unused here,
 ///         but nonetheless provided for sake of future-proofing.)
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok
-///       - ms8607_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
 ///
-enum ms8607_status ms8607_set_humidity_i2c_controller_mode(ms8607_sensor *sensor,  enum ms8607_humidity_i2c_controller_mode mode, void *caller_context)
+tepht_error_info  ms8607_set_humidity_i2c_controller_mode(ms8607_sensor *sensor,  enum ms8607_humidity_i2c_controller_mode mode, void *caller_context)
 {
 	(void)caller_context;
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
 	sensor->hsensor_i2c_controller_mode = mode;
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
 }
 
 /// \brief    Reads the temperature, pressure and relative humidity values.
@@ -577,34 +631,74 @@ enum ms8607_status ms8607_set_humidity_i2c_controller_mode(ms8607_sensor *sensor
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_null_argument : One or more of the `t`, `p`, or `h` pointers were NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
-///       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
-///       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_null_argument : One or more of the `t`, `p`, or `h` pointers were NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+///       - tepht_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
+///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
 ///
-enum ms8607_status ms8607_read_temperature_pressure_humidity_int32(ms8607_sensor *sensor, int32_t *t, int32_t *p, int32_t *h,  void *caller_context)
+tepht_error_info  ms8607_read_temperature_pressure_humidity_int32(ms8607_sensor *sensor, int32_t *t, int32_t *p, int32_t *h,  void *caller_context)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
 	if ( t == NULL || p == NULL || h == NULL )
-		return ms8607_status_null_argument;
+		return ms8607_error(sensor, tepht_status_null_argument);
 
-	enum ms8607_status status;
+	tepht_error_info  einfo;
+	einfo = psensor_read_pressure_and_temperature(sensor, t, p, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
 
-	status = psensor_read_pressure_and_temperature(sensor, t, p, caller_context);
-	if(status != ms8607_status_ok)
-		return status;
+	einfo = hsensor_read_relative_humidity(sensor, h, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
 
-	status = hsensor_read_relative_humidity(sensor, h, caller_context);
-	if(status != ms8607_status_ok)
-		return status;
+	return ms8607_success(sensor);
+}
 
-	return ms8607_status_ok;
+/// \brief    Reads the temperature and pressure values.
+///
+/// \details  The results are returned in thousanths as a way to preserve
+///           the sensor's resolution while using integer types.
+///
+/// \param[in] ms8607_sensor* sensor : The sensor to use for measuring
+/// \param[out] int32_t* : Thousanths of degC temperature value
+/// \param[out] int32_t* : Microbar pressure value (thousanths of millibar)
+/// \param[in]  void* caller_context : When this function calls any callbacks
+///         from the `ms8607_host_functions` structure, this will be passed
+///         directly to those callbacks' `caller_context` parameter.
+///
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_null_argument : One or more of the `t` or `p` pointers were NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+///       - tepht_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
+///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
+///
+tepht_error_info  ms8607_read_temperature_pressure_int32(ms8607_sensor *sensor, int32_t *t, int32_t *p, void *caller_context)
+{
+	if ( sensor == NULL )
+		return ms8607_error(sensor, tepht_status_null_sensor);
+
+	if ( t == NULL || p == NULL )
+		return ms8607_error(sensor, tepht_status_null_argument);
+
+	tepht_error_info  einfo;
+	einfo = psensor_read_pressure_and_temperature(sensor, t, p, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
+
+	return ms8607_success(sensor);
+}
+
+static tepht_error_info  ms8607_read_temperature_pressure_int32__virtual(void *self, int32_t *t, int32_t *p,  void *caller_context) {
+	return ms8607_read_temperature_pressure_int32(self, t, p, caller_context);
 }
 
 /// \brief Reads the temperature, pressure and relative humidity values.
@@ -617,18 +711,18 @@ enum ms8607_status ms8607_read_temperature_pressure_humidity_int32(ms8607_sensor
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_null_argument : One or more of the `t`, `p`, or `h` pointers were NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
-///       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
-///       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_null_argument : One or more of the `t`, `p`, or `h` pointers were NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+///       - tepht_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
+///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
 ///
-enum ms8607_status ms8607_read_temperature_pressure_humidity_float32(ms8607_sensor *sensor, float *t, float *p, float *h, void *caller_context)
+tepht_error_info  ms8607_read_temperature_pressure_humidity_float32(ms8607_sensor *sensor, float *t, float *p, float *h, void *caller_context)
 {
-	enum ms8607_status  status;
+	tepht_error_info  einfo;
 	int32_t t_;
 	int32_t p_;
 	int32_t h_;
@@ -636,14 +730,14 @@ enum ms8607_status ms8607_read_temperature_pressure_humidity_float32(ms8607_sens
 	// NULL status of the `sensor` parameter will be checked by `ms8607_read_temperature_pressure_humidity_i32`.
 
 	if ( t == NULL || p == NULL || h == NULL )
-		return ms8607_status_null_argument;
+		return ms8607_error(sensor, tepht_status_null_argument);
 
-	status = ms8607_read_temperature_pressure_humidity_int32(sensor, &t_, &p_, &h_, caller_context);
+	einfo = ms8607_read_temperature_pressure_humidity_int32(sensor, &t_, &p_, &h_, caller_context);
 	*t = ((float)t_) / 1000;
 	*p = ((float)p_) / 1000;
 	*h = ((float)h_) / 1000;
 
-	return status;
+	return einfo;
 }
 
 /// \brief Provide battery status
@@ -656,32 +750,32 @@ enum ms8607_status ms8607_read_temperature_pressure_humidity_float32(ms8607_sens
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_get_battery_status(ms8607_sensor *sensor, enum ms8607_battery_status *bat, void *caller_context)
+tepht_error_info  ms8607_get_battery_status(ms8607_sensor *sensor, enum ms8607_battery_status *bat, void *caller_context)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
 	if ( bat == NULL )
-		return ms8607_status_null_argument;
+		return ms8607_error(sensor, tepht_status_null_argument);
 
-	enum ms8607_status  status;
+	tepht_status  status;
 	uint8_t reg_value;
 
-	status = ms8607_hsensor_read_user_register(sensor, &reg_value, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
+	status = hsensor_read_user_register(sensor, &reg_value, caller_context);
+	if( status != tepht_status_ok)
+		return ms8607_error(sensor, status);
 
 	if( reg_value & HSENSOR_USER_REG_END_OF_BATTERY_VDD_BELOW_2_25V )
 		*bat = ms8607_battery_low;
 	else
 		*bat = ms8607_battery_ok;
 
-	return status;
+	return ms8607_success(sensor);
 }
 
 /// \brief Enable heater
@@ -691,28 +785,32 @@ enum ms8607_status ms8607_get_battery_status(ms8607_sensor *sensor, enum ms8607_
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void *caller_context)
+tepht_error_info  ms8607_enable_heater(ms8607_sensor *sensor, void *caller_context)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t reg_value;
 
-	status = ms8607_hsensor_read_user_register(sensor, &reg_value, caller_context);
-	if( status != ms8607_status_ok )
-		return status;
+	status = hsensor_read_user_register(sensor, &reg_value, caller_context);
+	if( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
 
 	// Clear the resolution bits
 	reg_value |= HSENSOR_USER_REG_ONCHIP_HEATER_ENABLE;
 	sensor->hsensor_heater_on = true;
 
-	return hsensor_write_user_register(sensor, reg_value, caller_context);
+	status = hsensor_write_user_register(sensor, reg_value, caller_context);
+	if ( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
+
+	return ms8607_success(sensor);
 }
 
 /// \brief Disable heater
@@ -722,28 +820,32 @@ enum ms8607_status ms8607_enable_heater(ms8607_sensor *sensor, void *caller_cont
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_disable_heater(ms8607_sensor *sensor, void *caller_context)
+tepht_error_info  ms8607_disable_heater(ms8607_sensor *sensor, void *caller_context)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t reg_value;
 
-	status = ms8607_hsensor_read_user_register(sensor, &reg_value, caller_context);
-	if( status != ms8607_status_ok )
-		return status;
+	status = hsensor_read_user_register(sensor, &reg_value, caller_context);
+	if( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
 
 	// Clear the resolution bits
 	reg_value &= ~HSENSOR_USER_REG_ONCHIP_HEATER_ENABLE;
 	sensor->hsensor_heater_on = false;
 
-	return hsensor_write_user_register(sensor, reg_value, caller_context);
+	status = hsensor_write_user_register(sensor, reg_value, caller_context);
+	if ( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
+
+	return ms8607_success(sensor);
 }
 
 /// \brief Get heater status
@@ -756,22 +858,22 @@ enum ms8607_status ms8607_disable_heater(ms8607_sensor *sensor, void *caller_con
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status ms8607_get_heater_status(ms8607_sensor *sensor, enum ms8607_heater_status *heater, void *caller_context)
+tepht_error_info  ms8607_get_heater_status(ms8607_sensor *sensor, enum ms8607_heater_status *heater, void *caller_context)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t reg_value;
 
-	status = ms8607_hsensor_read_user_register(sensor, &reg_value, caller_context);
-	if( status != ms8607_status_ok )
-		return status;
+	status = hsensor_read_user_register(sensor, &reg_value, caller_context);
+	if( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
 
 	// Get the heater enable bit in reg_value
 	if( reg_value & HSENSOR_USER_REG_ONCHIP_HEATER_ENABLE)
@@ -779,7 +881,7 @@ enum ms8607_status ms8607_get_heater_status(ms8607_sensor *sensor, enum ms8607_h
 	else
 		*heater = ms8607_heater_off;
 
-	return status;
+	return ms8607_success(sensor);
 }
 
 /******************** Functions from humidity sensor ********************/
@@ -799,7 +901,7 @@ static bool hsensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
 
-	enum ms8607_status status;
+	tepht_status status;
 
 	ms8607_i2c_controller_packet transfer = {
 		.address     = HSENSOR_ADDR,
@@ -808,7 +910,7 @@ static bool hsensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 	};
 	/* Do the transfer */
 	status = sensor->host_funcs->i2c_controller_write(caller_context, &transfer);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return false;
 
 	return true;
@@ -821,36 +923,36 @@ static bool hsensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-static enum ms8607_status  hsensor_reset(ms8607_sensor *sensor, void *caller_context)
+static tepht_error_info  hsensor_reset(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
 
-	enum ms8607_status status;
+	tepht_status status;
 
 	status = hsensor_write_command(sensor, HSENSOR_RESET_COMMAND, caller_context);
-	if( status != ms8607_status_ok )
-		return status;
+	if( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
 
 	sensor->hsensor_conversion_time = HSENSOR_CONVERSION_TIME_12b;
 	sensor->host_funcs->sleep_ms(caller_context, HSENSOR_RESET_TIME);
 
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
 }
 
 /// \brief Writes the Humidity sensor 8-bits command with the value passed
 ///
 /// \param[in] uint8_t : Command value to be written.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-static enum ms8607_status hsensor_write_command(ms8607_sensor *sensor, uint8_t cmd, void *caller_context)
+static tepht_status hsensor_write_command(ms8607_sensor *sensor, uint8_t cmd, void *caller_context)
 {
 	assert( sensor != NULL );
 
@@ -873,12 +975,12 @@ static enum ms8607_status hsensor_write_command(ms8607_sensor *sensor, uint8_t c
 ///
 /// \param[in] uint8_t : Command value to be written.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-enum ms8607_status hsensor_write_command_no_stop(ms8607_sensor *sensor, uint8_t cmd, void *caller_context)
+tepht_status hsensor_write_command_no_stop(ms8607_sensor *sensor, uint8_t cmd, void *caller_context)
 {
 	assert( sensor != NULL );
 
@@ -901,11 +1003,11 @@ enum ms8607_status hsensor_write_command_no_stop(ms8607_sensor *sensor, uint8_t 
 /// \param[in] uint16_t : variable on which to check CRC
 /// \param[in] uint8_t : CRC value
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : CRC check is OK
-///       - ms8607_status_measurement_invalid : CRC check error
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : CRC check is OK
+///       - tepht_status_measurement_invalid : CRC check error
 ///
-static enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
+static tepht_status hsensor_crc_check( uint16_t value, uint8_t crc)
 {
 	uint32_t polynom = 0x988000; // x^8 + x^5 + x^4 + 1
 	uint32_t msb     = 0x800000;
@@ -924,9 +1026,9 @@ static enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
 		polynom >>=1;
 	}
 	if( result == crc )
-		return ms8607_status_ok;
+		return tepht_status_ok;
 	else
-		return ms8607_status_measurement_invalid;
+		return tepht_status_measurement_invalid;
 }
 
 /// \brief   Reads the MS8607 humidity user register.
@@ -942,16 +1044,32 @@ static enum ms8607_status hsensor_crc_check( uint16_t value, uint8_t crc)
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-enum ms8607_status ms8607_hsensor_read_user_register(ms8607_sensor *sensor, uint8_t *value, void *caller_context)
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+tepht_error_info  ms8607_hsensor_read_user_register(ms8607_sensor *sensor, uint8_t *value, void *caller_context)
+{
+	if ( sensor == NULL )
+		return ms8607_error(sensor, tepht_status_null_sensor);
+
+	if ( value == NULL )
+		return ms8607_error(sensor, tepht_status_null_argument);
+
+	tepht_status  status;
+	status = hsensor_read_user_register(sensor, value, caller_context);
+	if ( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
+
+	return ms8607_success(sensor);
+}
+
+static tepht_status hsensor_read_user_register(ms8607_sensor *sensor, uint8_t *value, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( value != NULL );
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t buffer[1];
 	buffer[0] = 0;
 
@@ -964,16 +1082,16 @@ enum ms8607_status ms8607_hsensor_read_user_register(ms8607_sensor *sensor, uint
 
 	// Send the Read Register Command
 	status = hsensor_write_command(sensor, HSENSOR_READ_USER_REG_COMMAND, caller_context);
-	if( status != ms8607_status_ok )
+	if( status != tepht_status_ok )
 		return status;
 
 	status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-	if ( status != ms8607_status_ok )
+	if ( status != tepht_status_ok )
 		return status;
 
 	*value = buffer[0];
 
-	return ms8607_status_ok;
+	return tepht_status_ok;
 }
 
 /// \brief Writes the MS8607 humidity user register with value
@@ -985,20 +1103,20 @@ enum ms8607_status ms8607_hsensor_read_user_register(ms8607_sensor *sensor, uint
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-static enum ms8607_status hsensor_write_user_register(ms8607_sensor *sensor, uint8_t value, void *caller_context)
+static tepht_status hsensor_write_user_register(ms8607_sensor *sensor, uint8_t value, void *caller_context)
 {
 	assert( sensor != NULL );
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t reg;
 	uint8_t data[2];
 
-	status = ms8607_hsensor_read_user_register(sensor, &reg, caller_context);
-	if( status != ms8607_status_ok )
+	status = hsensor_read_user_register(sensor, &reg, caller_context);
+	if( status != tepht_status_ok )
 		return status;
 
 	// Clear bits of reg that are not reserved
@@ -1027,17 +1145,17 @@ static enum ms8607_status hsensor_write_user_register(ms8607_sensor *sensor, uin
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
 ///
-static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor *sensor, uint16_t *adc, void *caller_context)
+static tepht_error_info  hsensor_humidity_conversion_and_read_adc(ms8607_sensor *sensor, uint16_t *adc, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( adc != NULL );
 
-	enum ms8607_status status = ms8607_status_ok;
+	tepht_status  status = tepht_status_ok;
 	uint16_t _adc;
 	uint8_t buffer[3];
 	uint8_t crc;
@@ -1071,17 +1189,17 @@ static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor
 	// defeat the capability-detection mechanism!
 	if( sensor->hsensor_i2c_controller_mode == ms8607_i2c_hold) {
 		status = hsensor_write_command_no_stop(sensor, HSENSOR_READ_HUMIDITY_W_HOLD_COMMAND, caller_context);
-		if( status != ms8607_status_ok)
-			return status;
+		if( status != tepht_status_ok)
+			return ms8607_error(sensor, status);
 
 		status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-		if( status != ms8607_status_ok)
-			return status;
+		if( status != tepht_status_ok)
+			return ms8607_error(sensor, status);
 	}
 	else {
 		status = hsensor_write_command(sensor, HSENSOR_READ_HUMIDITY_WO_HOLD_COMMAND, caller_context);
-		if( status != ms8607_status_ok)
-			return status;
+		if( status != tepht_status_ok)
+			return ms8607_error(sensor, status);
 
 		// `max_tries` is the number of times we will call `i2c_controller_read`
 		// before assuming the worst and giving up (timeout condition).
@@ -1107,20 +1225,20 @@ static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor
 			sensor->host_funcs->sleep_ms(caller_context, sensor->hsensor_conversion_time/1000);
 
 			status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-			if ( status == ms8607_status_callback_i2c_nack )
+			if ( status == tepht_status_callback_i2c_nack )
 			{
 				tries_remaining--;
 				if ( tries_remaining > 0 )
 					continue; // Not ready yet. That's OK, just wait longer.
 				else
-					return status; // Timeout: we waited too long while receiving only NACK.
+					return ms8607_error(sensor, status); // Timeout: we waited too long while receiving only NACK.
 			}
 			else
-			if ( status == ms8607_status_ok )
+			if ( status == tepht_status_ok )
 				break;
 			else
-			// if( status != ms8607_status_ok)
-				return status; // Other errors indicate something is *actually* wrong.
+			// if( status != tepht_status_ok)
+				return ms8607_error(sensor, status); // Other errors indicate something is *actually* wrong.
 		}
 	}
 
@@ -1128,15 +1246,15 @@ static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor
 	crc = buffer[2];
 
 	// Compute CRC
-	// This is where we can get the `ms8607_status_measurement_invalid` error.
+	// This is where we can get the `tepht_status_measurement_invalid` error.
 	// Notably, this is not EEPROM/coefficient related. We're checking the CRC of the measurement itself.
 	status = hsensor_crc_check(_adc,crc);
-	if( status != ms8607_status_ok)
-		return status;
+	if( status != tepht_status_ok)
+		return ms8607_error(sensor, status);
 
 	*adc = _adc;
 
-	return status;
+	return ms8607_success(sensor);
 }
 
 /// \brief Reads the relative humidity value.
@@ -1147,38 +1265,38 @@ static enum ms8607_status hsensor_humidity_conversion_and_read_adc(ms8607_sensor
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
 ///
-static enum ms8607_status hsensor_read_relative_humidity(ms8607_sensor *sensor, int32_t *humidity, void *caller_context)
+static tepht_error_info  hsensor_read_relative_humidity(ms8607_sensor *sensor, int32_t *humidity, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( humidity != NULL );
 
-	enum ms8607_status  status;
+	tepht_error_info  einfo;
 	uint16_t adc;
 
-	status = hsensor_humidity_conversion_and_read_adc(sensor, &adc, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
+	einfo = hsensor_humidity_conversion_and_read_adc(sensor, &adc, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
 
 	// Perform conversion function
 	//*humidity = (float)adc * HUMIDITY_COEFF_MUL / (1UL<<16) + HUMIDITY_COEFF_ADD;
 	*humidity = 1000 * adc * HUMIDITY_COEFF_MUL / (1UL<<16) + HUMIDITY_COEFF_ADD;
 
-	return status;
+	return ms8607_success(sensor);
 }
 
 #if 0
 // TODO: remove?
-/*static*/ enum ms8607_status hsensor_poll_relative_humidity(ms8607_sensor *sensor, float *humidity, void *caller_context)
+/*static*/ tepht_status hsensor_poll_relative_humidity(ms8607_sensor *sensor, float *humidity, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( humidity != NULL );
 
-	enum ms8607_status  status;
+	tepht_status  status;
 	uint16_t adc;
 	uint8_t buffer[3];
 	uint8_t crc;
@@ -1197,20 +1315,20 @@ static enum ms8607_status hsensor_read_relative_humidity(ms8607_sensor *sensor, 
 	// TODO: Move success-path stuff into separate function.
 	// This would allow the compiler to optimize inlining/etc for i-cache salvation.
 	status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-	if ( status == ms8607_status_callback_i2c_nack )
-		return ms8607_status_waiting; // Not ready yet. That's OK, just wait longer. TODO: Timeout calculations?
+	if ( status == tepht_status_callback_i2c_nack )
+		return tepht_status_waiting; // Not ready yet. That's OK, just wait longer. TODO: Timeout calculations?
 	else
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status; // Other errors indicate something is *actually* wrong.
 
 	adc = (buffer[0] << 8) | buffer[1];
 	crc = buffer[2];
 
 	// Compute CRC
-	// This is where we can get the `ms8607_status_measurement_invalid` error.
+	// This is where we can get the `tepht_status_measurement_invalid` error.
 	// Notably, this is not EEPROM/coefficient related. We're checking the CRC of the measurement itself.
 	status = hsensor_crc_check(adc,crc);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status;
 
 	// Perform conversion function
@@ -1231,25 +1349,25 @@ static enum ms8607_status hsensor_read_relative_humidity(ms8607_sensor *sensor, 
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_heater_on_error : Cannot compute compensated humidity because heater is on
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_heater_on_error : Cannot compute compensated humidity because heater is on
 ///
-enum ms8607_status ms8607_get_compensated_humidity(ms8607_sensor *sensor, float temperature, float relative_humidity, float *compensated_humidity)
+tepht_error_info  ms8607_get_compensated_humidity(ms8607_sensor *sensor, float temperature, float relative_humidity, float *compensated_humidity)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
 	if ( compensated_humidity == NULL )
-		return ms8607_status_null_argument;
+		return ms8607_error(sensor, tepht_status_null_argument);
 
 	if( sensor->hsensor_heater_on )
-		return ms8607_status_heater_on_error;
+		return ms8607_error(sensor, tepht_status_heater_on_error);
 
 	*compensated_humidity = ( relative_humidity + (25 - temperature) * HSENSOR_TEMPERATURE_COEFFICIENT);
 
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
 }
 
 /// \brief Returns the computed dew point
@@ -1263,30 +1381,30 @@ enum ms8607_status ms8607_get_compensated_humidity(ms8607_sensor *sensor, float 
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_null_sensor : The pointer provided for the `new_sensor` parameter was NULL.
-///       - ms8607_status_heater_on_error : Cannot compute compensated humidity because heater is on
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+///       - tepht_status_heater_on_error : Cannot compute compensated humidity because heater is on
 ///
-enum ms8607_status  ms8607_get_dew_point(ms8607_sensor *sensor, float temperature, float relative_humidity, float *dew_point)
+tepht_error_info  ms8607_get_dew_point(ms8607_sensor *sensor, float temperature, float relative_humidity, float *dew_point)
 {
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
 	if ( dew_point == NULL )
-		return ms8607_status_null_argument;
+		return ms8607_error(sensor, tepht_status_null_argument);
 
 	double partial_pressure;
 
 	if( sensor->hsensor_heater_on )
-		return ms8607_status_heater_on_error;
+		return ms8607_error(sensor, tepht_status_heater_on_error);
 
 	// Missing power of 10
 	partial_pressure = pow( 10, HSENSOR_CONSTANT_A - HSENSOR_CONSTANT_B / (temperature + HSENSOR_CONSTANT_C) );
 
 	*dew_point =  - HSENSOR_CONSTANT_B / (log10( relative_humidity * partial_pressure / 100) - HSENSOR_CONSTANT_A) - HSENSOR_CONSTANT_C;
 
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
 }
 
 /******************** Functions from Pressure sensor ********************/
@@ -1306,7 +1424,7 @@ static bool psensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
 
-	enum ms8607_status status;
+	tepht_status status;
 
 	ms8607_i2c_controller_packet transfer = {
 		.address     = PSENSOR_ADDR,
@@ -1316,7 +1434,7 @@ static bool psensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 
 	/* Do the transfer */
 	status = sensor->host_funcs->i2c_controller_write(caller_context, &transfer);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return false;
 
 	return true;
@@ -1329,14 +1447,20 @@ static bool psensor_is_connected(ms8607_sensor *sensor, void *caller_context)
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-static enum ms8607_status  psensor_reset(ms8607_sensor *sensor, void *caller_context)
+static tepht_error_info  psensor_reset(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
-	return psensor_write_command(sensor, PSENSOR_RESET_COMMAND, caller_context);
+	
+	tepht_status status;
+	status = psensor_write_command(sensor, PSENSOR_RESET_COMMAND, caller_context);
+	if ( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
+
+	return ms8607_success(sensor);
 }
 
 ///
@@ -1348,11 +1472,11 @@ static enum ms8607_status  psensor_reset(ms8607_sensor *sensor, void *caller_con
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : I2C transfer completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : I2C transfer completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
 ///
-static enum ms8607_status psensor_write_command(ms8607_sensor *sensor, uint8_t cmd, void *caller_context)
+static tepht_status psensor_write_command(ms8607_sensor *sensor, uint8_t cmd, void *caller_context)
 {
 	assert( sensor != NULL );
 	uint8_t data[1];
@@ -1380,19 +1504,19 @@ static enum ms8607_status psensor_write_command(ms8607_sensor *sensor, uint8_t c
 ///         does not call any host functions, so `caller_context` is unused here,
 ///         but nonetheless provided for sake of future-proofing.)
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok
-///       - ms8607_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok
+///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
 ///
 ///
-enum ms8607_status  ms8607_set_pressure_resolution(ms8607_sensor *sensor, enum ms8607_pressure_resolution res, void *caller_context)
+tepht_error_info  ms8607_set_pressure_resolution(ms8607_sensor *sensor, enum ms8607_pressure_resolution res, void *caller_context)
 {
 	(void)caller_context;
 	if ( sensor == NULL )
-		return ms8607_status_null_sensor;
+		return ms8607_error(sensor, tepht_status_null_sensor);
 
 	sensor->psensor_resolution_osr = res;
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
 }
 
 /// \brief Reads the psensor EEPROM coefficient stored at address provided.
@@ -1404,17 +1528,17 @@ enum ms8607_status  ms8607_set_pressure_resolution(ms8607_sensor *sensor, enum m
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : All operations completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : All operations completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
 ///
-static enum ms8607_status psensor_read_eeprom_coeff(ms8607_sensor *sensor, uint8_t command, uint16_t *coeff, void *caller_context)
+static tepht_error_info  psensor_read_eeprom_coeff(ms8607_sensor *sensor, uint8_t command, uint16_t *coeff, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( coeff != NULL );
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t buffer[2];
 
 	buffer[0] = 0;
@@ -1429,19 +1553,19 @@ static enum ms8607_status psensor_read_eeprom_coeff(ms8607_sensor *sensor, uint8
 
 	// Send the conversion command
 	status = psensor_write_command(sensor, command, caller_context);
-	if(status != ms8607_status_ok)
-		return status;
+	if(status != tepht_status_ok)
+		return ms8607_error(sensor, status);
 
 	status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-	if(status != ms8607_status_ok)
-		return status;
+	if(status != tepht_status_ok)
+		return ms8607_error(sensor, status);
 
 	*coeff = (buffer[0] << 8) | buffer[1];
 
 	if (*coeff == 0)
-		return ms8607_status_eeprom_is_zero;
+		return ms8607_error(sensor, tepht_status_eeprom_is_zero);
 
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
 }
 
 /// \brief Reads the ms8607 EEPROM coefficients to store them for computation.
@@ -1451,32 +1575,32 @@ static enum ms8607_status psensor_read_eeprom_coeff(ms8607_sensor *sensor, uint8
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : All operations completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
-///       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : All operations completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+///       - tepht_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
 ///
-static enum ms8607_status psensor_read_eeprom(ms8607_sensor *sensor, void *caller_context)
+static tepht_error_info  psensor_read_eeprom(ms8607_sensor *sensor, void *caller_context)
 {
 	assert( sensor != NULL );
-	enum ms8607_status status;
+	tepht_error_info  einfo;
 	uint8_t i;
 
 	for( i=0 ; i< MS8607_COEFFICIENT_COUNT ; i++)
 	{
-		status = psensor_read_eeprom_coeff(
+		einfo = psensor_read_eeprom_coeff(
 			sensor, PROM_ADDRESS_READ_ADDRESS_0 + i*2, sensor->eeprom_coeff+i, caller_context);
-		if(status != ms8607_status_ok)
-			return status;
+		if( tepht_is_error(einfo) )
+			return einfo;
 	}
 
 	if( !psensor_crc_check( sensor->eeprom_coeff, (sensor->eeprom_coeff[CRC_INDEX] & 0xF000)>>12 ) )
-		return ms8607_status_eeprom_crc_error;
+		return ms8607_error(sensor, tepht_status_eeprom_crc_error);
 
 	sensor->psensor_coeff_read = true;
 
-	return ms8607_status_ok;
+	return ms8607_success(sensor);
 }
 
 /// \brief Triggers conversion and reading of ADC value
@@ -1488,17 +1612,17 @@ static enum ms8607_status psensor_read_eeprom(ms8607_sensor *sensor, void *calle
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : All operations completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_measurement_invalid : I2C transfer(s) completed, but data received was invalid
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : All operations completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_measurement_invalid : I2C transfer(s) completed, but data received was invalid
 ///
-static enum ms8607_status psensor_conversion_and_read_adc(ms8607_sensor *sensor, uint8_t cmd, uint32_t *adc, void *caller_context)
+static tepht_error_info  psensor_conversion_and_read_adc(ms8607_sensor *sensor, uint8_t cmd, uint32_t *adc, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( adc != NULL );
 
-	enum ms8607_status status;
+	tepht_status status;
 	uint8_t buffer[3];
 
 	buffer[0] = 0;
@@ -1515,7 +1639,7 @@ static enum ms8607_status psensor_conversion_and_read_adc(ms8607_sensor *sensor,
 	// TODO: implement?
 #if 0
 	status = psensor_write_command(sensor, cmd, caller_context);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status;
 
 	while ( microsecs() < psensor_conversion_time[ (cmd & PSENSOR_CONVERSION_OSR_MASK)/2 ] )
@@ -1523,11 +1647,11 @@ static enum ms8607_status psensor_conversion_and_read_adc(ms8607_sensor *sensor,
 
 	// Send the read command
 	status = psensor_write_command(sensor, PSENSOR_READ_ADC, caller_context);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status;
 
     status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-	if( status != ms8607_status_ok )
+	if( status != tepht_status_ok )
 		return status;
 
 	// TODO: If failure, should probably send reset sequence?
@@ -1545,21 +1669,21 @@ static enum ms8607_status psensor_conversion_and_read_adc(ms8607_sensor *sensor,
 	status = psensor_write_command(sensor, cmd, caller_context);
 	// 20ms wait for conversion
 	sensor->host_funcs->sleep_ms(caller_context, psensor_conversion_time[ (cmd & PSENSOR_CONVERSION_OSR_MASK)/2 ]/1000);
-	if( status != ms8607_status_ok)
-		return status;
+	if( status != tepht_status_ok)
+		return ms8607_error(sensor, status);
 
 	// Send the read command
 	status = psensor_write_command(sensor, PSENSOR_READ_ADC, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
+	if( status != tepht_status_ok)
+		return ms8607_error(sensor, status);
 
     status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-	if( status != ms8607_status_ok )
-		return status;
+	if( status != tepht_status_ok )
+		return ms8607_error(sensor, status);
 
 	*adc = ((uint32_t)buffer[0] << 16) | ((uint32_t)buffer[1] << 8) | buffer[2];
 
-	return status;
+	return ms8607_success(sensor);
 }
 
 /// \brief Compute temperature and pressure
@@ -1571,47 +1695,48 @@ static enum ms8607_status psensor_conversion_and_read_adc(ms8607_sensor *sensor,
 ///         from the `ms8607_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
-/// \return ms8607_status : status of MS8607
-///       - ms8607_status_ok : All operations completed successfully
-///       - ms8607_status_callback_error : Error occurred within a ms8607_host_functions function
-///       - ms8607_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
-///       - ms8607_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
-///       - ms8607_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
+/// \return tepht_status : status of MS8607
+///       - tepht_status_ok : All operations completed successfully
+///       - tepht_status_callback_error : Error occurred within a ms8607_host_functions function
+///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
+///       - tepht_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
+///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
 ///
-static enum ms8607_status psensor_read_pressure_and_temperature(ms8607_sensor *sensor, int32_t *temperature, int32_t *pressure, void *caller_context)
+static tepht_error_info  psensor_read_pressure_and_temperature(ms8607_sensor *sensor, int32_t *temperature, int32_t *pressure, void *caller_context)
 {
 	assert( sensor      != NULL );
 	assert( temperature != NULL );
 	assert( pressure    != NULL );
 
-	enum ms8607_status status = ms8607_status_ok;
+	tepht_error_info  einfo;
 	uint32_t adc_temperature, adc_pressure;
 	int32_t dT, TEMP;
 	int64_t OFF, SENS, P, T2, OFF2, SENS2;
 	uint8_t cmd;
 
 	// If first time adc is requested, get EEPROM coefficients
+	einfo = ms8607_success(sensor);
 	if( sensor->psensor_coeff_read == false )
-		status = psensor_read_eeprom(sensor, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
+		einfo = psensor_read_eeprom(sensor, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
 
 	// First read temperature
 	cmd = sensor->psensor_resolution_osr*2;
 	cmd |= PSENSOR_START_TEMPERATURE_ADC_CONVERSION;
-	status = psensor_conversion_and_read_adc(sensor, cmd, &adc_temperature, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
+	einfo = psensor_conversion_and_read_adc(sensor, cmd, &adc_temperature, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
 
 	// Now read pressure
 	cmd = sensor->psensor_resolution_osr*2;
 	cmd |= PSENSOR_START_PRESSURE_ADC_CONVERSION;
-	status = psensor_conversion_and_read_adc(sensor, cmd, &adc_pressure, caller_context);
-	if( status != ms8607_status_ok)
-		return status;
+	einfo = psensor_conversion_and_read_adc(sensor, cmd, &adc_pressure, caller_context);
+	if( tepht_is_error(einfo) )
+		return einfo;
 
 	if (adc_temperature == 0 || adc_pressure == 0)
-		return ms8607_status_measurement_invalid;
+		return ms8607_error(sensor, tepht_status_measurement_invalid);
 
 	// Difference between actual and reference temperature = D2 - Tref
 	dT = (int32_t)adc_temperature - ( (int32_t)sensor->eeprom_coeff[REFERENCE_TEMPERATURE_INDEX] <<8 );
@@ -1658,7 +1783,7 @@ static enum ms8607_status psensor_read_pressure_and_temperature(ms8607_sensor *s
 	*temperature = 10*( TEMP - T2 );
 	*pressure = 10*P;
 
-	return status;
+	return ms8607_success(sensor);
 }
 
 #if 0
@@ -1692,18 +1817,18 @@ static enum ms8607_status psensor_read_pressure_and_temperature(ms8607_sensor *s
 //
 static uint64_t ms8607_time_of_last_temperature_request = 0;
 
-enum ms8607_status psensor_request_temperature(ms8607_sensor *sensor, uint64_t microsecs, void *caller_context)
+tepht_status psensor_request_temperature(ms8607_sensor *sensor, uint64_t microsecs, void *caller_context)
 {
 	assert( sensor != NULL );
 
-	enum ms8607_status status = ms8607_status_ok;
+	tepht_status status = tepht_status_ok;
 	uint8_t cmd;
 
 	cmd = sensor->psensor_resolution_osr*2;
 	cmd |= PSENSOR_START_TEMPERATURE_ADC_CONVERSION;
 
 	status = psensor_write_command(sensor, cmd, caller_context);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status;
 
 	ms8607_time_of_last_temperature_request = microsecs;
@@ -1711,12 +1836,12 @@ enum ms8607_status psensor_request_temperature(ms8607_sensor *sensor, uint64_t m
 	return status;
 }
 
-enum ms8607_status psensor_poll_raw_temperature(ms8607_sensor *sensor, uint64_t microsecs, uint32_t *temperature, void *caller_context)
+tepht_status psensor_poll_raw_temperature(ms8607_sensor *sensor, uint64_t microsecs, uint32_t *temperature, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( temperature != NULL );
 
-	enum ms8607_status status = ms8607_status_ok;
+	tepht_status status = tepht_status_ok;
 	uint8_t cmd;
 
 	cmd = sensor->psensor_resolution_osr*2;
@@ -1724,7 +1849,7 @@ enum ms8607_status psensor_poll_raw_temperature(ms8607_sensor *sensor, uint64_t 
 
 	uint64_t delay_us = psensor_conversion_time[ (cmd & PSENSOR_CONVERSION_OSR_MASK)/2 ];
 	if ( ((int64_t)microsecs - ms8607_time_of_last_temperature_request) < delay_us )
-		return ms8607_status_waiting;
+		return tepht_status_waiting;
 
 	uint8_t buffer[3];
 
@@ -1741,11 +1866,11 @@ enum ms8607_status psensor_poll_raw_temperature(ms8607_sensor *sensor, uint64_t 
 
 	// Send the read command
 	status = psensor_write_command(sensor, PSENSOR_READ_ADC, caller_context);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status;
 
     status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-	if( status != ms8607_status_ok )
+	if( status != tepht_status_ok )
 		return status;
 
 	*temperature = ((uint32_t)buffer[0] << 16) | ((uint32_t)buffer[1] << 8) | buffer[2];
@@ -1755,18 +1880,18 @@ enum ms8607_status psensor_poll_raw_temperature(ms8607_sensor *sensor, uint64_t 
 
 static int64_t ms8607_time_of_last_pressure_request = 0;
 
-enum ms8607_status psensor_request_pressure(ms8607_sensor *sensor, uint64_t microsecs, void *caller_context)
+tepht_status psensor_request_pressure(ms8607_sensor *sensor, uint64_t microsecs, void *caller_context)
 {
 	assert( sensor != NULL );
 
-	enum ms8607_status status = ms8607_status_ok;
+	tepht_status status = tepht_status_ok;
 	uint8_t cmd;
 
 	cmd = sensor->psensor_resolution_osr*2;
 	cmd |= PSENSOR_START_PRESSURE_ADC_CONVERSION;
 
 	status = psensor_write_command(sensor, cmd, caller_context);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status;
 
 	ms8607_time_of_last_pressure_request = microsecs;
@@ -1774,12 +1899,12 @@ enum ms8607_status psensor_request_pressure(ms8607_sensor *sensor, uint64_t micr
 	return status;
 }
 
-enum ms8607_status psensor_poll_raw_pressure(ms8607_sensor *sensor, uint64_t microsecs, uint32_t *pressure, void *caller_context)
+tepht_status psensor_poll_raw_pressure(ms8607_sensor *sensor, uint64_t microsecs, uint32_t *pressure, void *caller_context)
 {
 	assert( sensor != NULL );
 	assert( pressure != NULL );
 
-	enum ms8607_status status = ms8607_status_ok;
+	tepht_status status = tepht_status_ok;
 	uint8_t cmd;
 
 	cmd = sensor->psensor_resolution_osr*2;
@@ -1787,7 +1912,7 @@ enum ms8607_status psensor_poll_raw_pressure(ms8607_sensor *sensor, uint64_t mic
 
 	int64_t delay_us = psensor_conversion_time[ (cmd & PSENSOR_CONVERSION_OSR_MASK)/2 ];
 	if ( ((int64_t)microsecs - ms8607_time_of_last_pressure_request) < (int64_t)delay_us )
-		return ms8607_status_waiting;
+		return tepht_status_waiting;
 
 	uint8_t buffer[3];
 
@@ -1804,11 +1929,11 @@ enum ms8607_status psensor_poll_raw_pressure(ms8607_sensor *sensor, uint64_t mic
 
 	// Send the read command
 	status = psensor_write_command(sensor, PSENSOR_READ_ADC, caller_context);
-	if( status != ms8607_status_ok)
+	if( status != tepht_status_ok)
 		return status;
 
     status = sensor->host_funcs->i2c_controller_read(caller_context, &read_transfer);
-	if( status != ms8607_status_ok )
+	if( status != tepht_status_ok )
 		return status;
 
 	*pressure = ((uint32_t)buffer[0] << 16) | ((uint32_t)buffer[1] << 8) | buffer[2];
@@ -1857,62 +1982,20 @@ static bool psensor_crc_check (uint16_t *n_prom, uint8_t crc)
 	return  ( n_rem == crc );
 }
 
-const char *ms8607_stringize_error(enum ms8607_status error_code)
-{
-	switch(error_code)
+static tepht_pt_sensor_vtable  ms8607_pt_sensor_vtable =
 	{
-		case ms8607_status_ok:
-			return "Status OK, success. (ms8607_status_ok)";
+		.is_connected                    = ms8607_is_connected__virtual,
+		.reset                           = ms8607_reset__virtual,
+		.read_temperature_pressure_int32 = ms8607_read_temperature_pressure_int32__virtual
+	};
 
-		case ms8607_status_waiting:
-			return "Status OK, but waiting for sensor to respond. (ms8607_status_waiting)";
-
-		case ms8607_status_null_argument:
-			return "Error: A function in the ms8607 driver was called with a NULL argument when a non-NULL argument was required. (ms8607_status_null_argument)";
-
-		case ms8607_status_null_sensor:
-			return "Error: A function in the ms8607 driver was given a NULL pointer to a `ms8607_sensor` object. These are required to be non-NULL. (ms8607_status_null_sensor)";
-
-		case ms8607_status_null_host_function:
-			return "Error: A member of the `ms8607_host_functions` structure was NULL. This could lead to crashing and unpredictable behavior later on. (ms8607_status_null_host_function)";
-
-		case ms8607_status_callback_error:
-			return "Error occurred within a function dispatched from the `ms8607_host_functions` structure. (ms8607_status_callback_error)";
-
-		case ms8607_status_callback_i2c_nack:
-			return "I2C transfer did not complete. Peripheral responded with NACK. (ms8607_status_callback_i2c_nack)";
-
-		case ms8607_status_eeprom_is_zero: // Formerly ms8607_status_crc_error
-			return "One or more EEPROM coefficients were received as 0, preventing measurement. (ms8607_status_eeprom_is_zero)";
-
-		case ms8607_status_eeprom_crc_error: // Formerly ms8607_status_crc_error
-			return "EEPROM coefficients retrieved from the MS8607 did not pass CRC check. (ms8607_status_eeprom_crc_error)";
-
-		case ms8607_status_measurement_invalid: // Formerly ms8607_status_i2c_transfer_error
-			return "EEPROM is OK and I2C transfer completed, but data received was invalid. (ms8607_status_measurement_invalid)";
-
-		case ms8607_status_heater_on_error:
-			return "Cannot compute compensated humidity because heater is on. (ms8607_status_heater_on_error)";
-
-		case ms8607_status_i2c_read_unimplemented:
-			return "An implementation for the `ms8607_host_functions.i2c_controller_read`"
-				" function was not provided, but was needed to complete an operation.";
-
-		case ms8607_status_i2c_write_unimplemented:
-			return "An implementation for the `ms8607_host_functions.i2c_controller_write`"
-				" function was not provided, but was needed to complete an operation.";
-
-		case ms8607_status_i2c_write_no_stop_unimplemented:
-			return "An implementation for the `ms8607_host_functions.i2c_controller_write_no_stop`"
-				" function was not provided, but was needed to complete an operation.";
-
-		case ms8607_status_sleep_ms_unimplemented:
-			return "An implementation for the `ms8607_host_functions.sleep_ms`"
-				" function was not provided, but was needed to complete an operation.";
-
-		default: break;
-	}
-	return "Error code is not a valid ms8607_status.";
+tepht_pt_sensor   ms8607_to_pt_sensor_interface(ms8607_sensor *sensor)
+{
+	tepht_pt_sensor  generic;
+	assert(sensor != NULL);
+	generic.self   = sensor;
+	generic.vtable = &ms8607_pt_sensor_vtable;
+	return generic;
 }
 
 #ifdef __cplusplus
