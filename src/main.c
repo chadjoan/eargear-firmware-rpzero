@@ -29,6 +29,17 @@
 #include "ms8607.h"
 #include "ms5840.h"
 
+// TODO: Add safety that stops operating the pump if we don't hear from
+//   the chamber's pressure sensor for about a second. (It should be a period
+//   of time short enough that the pressure can't rise to uncomfortable or
+//   painful levels within that period of time. So this does depend somewhat
+//   on the size of the system being pressurized, and the flow rate of the pump.
+//   In this case, we can already tell that it takes at least a short while
+//   (a few seconds) to reach mildly high pressures (40-60 mbar or cmH2O),
+//   so we don't want to wait very long, but also we don't have to react
+//   immediately to small temporary hiccups in the sensors or I2C comms.)
+// TODO: Alarm buzzer when problems!
+
 // These calibration numbers must be determined by running a version of this
 // software compiled in "calibration mode" (TODO: macro name, instructions),
 // which will yield the numbers that these macros must expand to.
