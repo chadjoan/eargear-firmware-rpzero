@@ -88,6 +88,7 @@ CSRC = $(PORTSRC) \
        ${CHIBIOS}/os/various/chprintf.c \
        depends/drivers/te-sensor-drivers-pht/ms5840.c \
        depends/drivers/te-sensor-drivers-pht/ms8607.c \
+       depends/drivers/te-sensor-drivers-pht/tepht_common.c \
        src/main.c
 
 # C++ sources that can be compiled in ARM or THUMB mode depending on the global
