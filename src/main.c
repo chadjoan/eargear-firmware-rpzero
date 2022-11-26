@@ -612,7 +612,7 @@ static i2cflags_t i2c_controller_mux(i2c_context *target, char T_or_R)
 }
 
 //void i2c_master_init(void);
-static tepht_status i2c_error_to_ms8607_error(i2cflags_t  errors)
+static tepht_status_u16  i2c_error_to_tepht_error(i2cflags_t  errors)
 {
 	if ( errors == I2CD_ACK_FAILURE )
 		return tepht_status_callback_i2c_nack;
@@ -620,7 +620,7 @@ static tepht_status i2c_error_to_ms8607_error(i2cflags_t  errors)
 		return tepht_status_callback_error;
 }
 
-static tepht_status i2c_controller_read_ms8607(void *caller_context, ms8607_i2c_controller_packet *const packet)
+static tepht_status_u16  i2c_controller_read_for_tepht(void *caller_context, tepht_i2c_controller_packet *const packet)
 {
 	i2cflags_t   errors;
 	i2c_context  *ctx = caller_context;
@@ -628,7 +628,7 @@ static tepht_status i2c_controller_read_ms8607(void *caller_context, ms8607_i2c_
 	errors = i2c_controller_mux(ctx, 'R');
 	if ( errors != I2CD_NO_ERROR ) {
 		// Don't return NACK, as we didn't even have
-		// a chance to communicate with the ms8607.
+		// a chance to communicate with the sensor.
 		return tepht_status_callback_error;
 	}
 
@@ -637,12 +637,12 @@ static tepht_status i2c_controller_read_ms8607(void *caller_context, ms8607_i2c_
 		packet->data, packet->data_length);
 
 	if ( handle_i2c_errors_(ctx->meta->i2c_driver, stat, 'R', &errors) )
-		return i2c_error_to_ms8607_error(errors);
+		return i2c_error_to_tepht_error(errors);
 	else
 		return tepht_status_ok;
 }
 
-static tepht_status i2c_controller_write_ms8607(void *caller_context, ms8607_i2c_controller_packet *const packet)
+static tepht_status_u16  i2c_controller_write_for_tepht(void *caller_context, tepht_i2c_controller_packet *const packet)
 {
 	msg_t   stat;
 	uint8_t rxbuf[1];
@@ -652,7 +652,7 @@ static tepht_status i2c_controller_write_ms8607(void *caller_context, ms8607_i2c
 	errors = i2c_controller_mux(ctx, 'T');
 	if ( errors != I2CD_NO_ERROR ) {
 		// Don't return NACK, as we didn't even have
-		// a chance to communicate with the ms8607.
+		// a chance to communicate with the sensor.
 		return tepht_status_callback_error;
 	}
 
@@ -666,7 +666,7 @@ static tepht_status i2c_controller_write_ms8607(void *caller_context, ms8607_i2c
 		return tepht_status_ok;
 }
 
-static tepht_status i2c_controller_write_no_stop_ms8607(void *caller_context, ms8607_i2c_controller_packet *const packet)
+static tepht_status_u16  i2c_controller_write_no_stop_for_tepht(void *caller_context, tepht_i2c_controller_packet *const packet)
 {
 	i2c_context *ctx = caller_context;
 	(void)packet;
@@ -675,20 +675,20 @@ static tepht_status i2c_controller_write_no_stop_ms8607(void *caller_context, ms
 	return tepht_status_callback_error;
 }
 
-static tepht_status  sleep_ms_ms8607(void *caller_context, uint32_t ms)
+static tepht_status_u16  sleep_ms_for_tepht(void *caller_context, uint32_t ms)
 {
 	(void)caller_context;
 	chThdSleepMilliseconds(ms);
 	return tepht_status_ok;
 }
 
-static void  print_string_ms8607(void *caller_context, const char *text)
+static void  print_string_for_tepht(void *caller_context, const char *text)
 {
 	i2c_context *ctx = caller_context;
 	chprintf(ctx->meta->stdout, "%s", text);
 }
 
-static void  print_int64_ms8607(void *caller_context,  int64_t  number, uint8_t pad_width,  tepht_bool  pad_with_zeroes)
+static void  print_int64_for_tepht(void *caller_context,  int64_t  number, uint8_t pad_width,  tepht_bool  pad_with_zeroes)
 {
 	i2c_context *ctx = caller_context;
 	(void)pad_width;
@@ -696,83 +696,6 @@ static void  print_int64_ms8607(void *caller_context,  int64_t  number, uint8_t 
 	chprintf(ctx->meta->stdout, "%d", (int)number); // TODO: pad_width and pad character
 }
 
-
-
-
-static tepht_status i2c_error_to_ms5840_error(i2cflags_t  errors)
-{
-	if ( errors == I2CD_ACK_FAILURE )
-		return tepht_status_callback_i2c_nack;
-	else
-		return tepht_status_callback_error;
-}
-
-static tepht_status i2c_controller_read_ms5840(void *caller_context, ms5840_i2c_controller_packet *const packet)
-{
-	i2cflags_t   errors;
-	i2c_context  *ctx = caller_context;
-
-	errors = i2c_controller_mux(ctx, 'R');
-	if ( errors != I2CD_NO_ERROR ) {
-		// Don't return NACK, as we didn't even have
-		// a chance to communicate with the ms5840.
-		return tepht_status_callback_error;
-	}
-
-	msg_t  stat = i2cMasterReceive(
-		ctx->meta->i2c_driver, packet->address,
-		packet->data, packet->data_length);
-
-	if ( handle_i2c_errors_(ctx->meta->i2c_driver, stat, 'R', &errors) )
-		return i2c_error_to_ms5840_error(errors);
-	else
-		return tepht_status_ok;
-}
-
-static tepht_status i2c_controller_write_ms5840(void *caller_context, ms5840_i2c_controller_packet *const packet)
-{
-	msg_t   stat;
-	uint8_t rxbuf[1];
-	i2cflags_t   errors;
-	i2c_context  *ctx = caller_context;
-
-	errors = i2c_controller_mux(ctx, 'T');
-	if ( errors != I2CD_NO_ERROR ) {
-		// Don't return NACK, as we didn't even have
-		// a chance to communicate with the ms5840.
-		return tepht_status_callback_error;
-	}
-
-	stat = i2cMasterTransmit(
-		ctx->meta->i2c_driver, packet->address,
-		packet->data, packet->data_length, rxbuf, 0);
-
-	if ( handle_i2c_errors(ctx->meta->i2c_driver, stat, 'T') )
-		return tepht_status_callback_error;
-	else
-		return tepht_status_ok;
-}
-
-static tepht_status  sleep_ms_ms5840(void *caller_context, uint32_t ms)
-{
-	(void)caller_context;
-	chThdSleepMilliseconds(ms);
-	return tepht_status_ok;
-}
-
-static void  print_string_ms5840(void *caller_context, const char *text)
-{
-	i2c_context *ctx = caller_context;
-	chprintf(ctx->meta->stdout, "%s", text);
-}
-
-static void  print_int64_ms5840(void *caller_context,  int64_t  number, uint8_t pad_width,  tepht_bool  pad_with_zeroes)
-{
-	i2c_context *ctx = caller_context;
-	(void)pad_width;
-	(void)pad_with_zeroes;
-	chprintf(ctx->meta->stdout, "%d", (int)number); // TODO: pad_width and pad character
-}
 
 
 #if 0
@@ -980,29 +903,17 @@ static int64_t ticks2microsecs(systime_t ticks)
 }
 */
 
-static ms8607_host_functions  host_funcs_ms8607 = {0};
+static tepht_host_functions  host_funcs_for_tepht = {0};
 
-void chibi_ms8607_assign_functions(ms8607_host_functions *deps, void *caller_context)
+void chibi_tepht_assign_functions(tepht_host_functions *deps, void *caller_context)
 {
 	(void)caller_context;
-	deps->i2c_controller_read          = &i2c_controller_read_ms8607;
-	deps->i2c_controller_write         = &i2c_controller_write_ms8607;
-	deps->i2c_controller_write_no_stop = &i2c_controller_write_no_stop_ms8607;
-	deps->sleep_ms                     = &sleep_ms_ms8607;
-	deps->print_string                 = &print_string_ms8607;
-	deps->print_int64                  = &print_int64_ms8607;
-}
-
-static ms5840_host_functions  host_funcs_ms5840 = {0};
-
-void chibi_ms5840_assign_functions(ms5840_host_functions *deps, void *caller_context)
-{
-	(void)caller_context;
-	deps->i2c_controller_read          = &i2c_controller_read_ms5840;
-	deps->i2c_controller_write         = &i2c_controller_write_ms5840;
-	deps->sleep_ms                     = &sleep_ms_ms5840;
-	deps->print_string                 = &print_string_ms5840;
-	deps->print_int64                  = &print_int64_ms5840;
+	deps->i2c_controller_read          = &i2c_controller_read_for_tepht;
+	deps->i2c_controller_write         = &i2c_controller_write_for_tepht;
+	deps->i2c_controller_write_no_stop = &i2c_controller_write_no_stop_for_tepht;
+	deps->sleep_ms                     = &sleep_ms_for_tepht;
+	deps->print_string                 = &print_string_for_tepht;
+	deps->print_int64                  = &print_int64_for_tepht;
 }
 
 void chibi_print_tepht_string(void *printer_context, const char* str, size_t len)
@@ -1108,6 +1019,7 @@ static msg_t  thread_main_for_i2c_sensors(void *p)
 	ms5840_sensor       sensor_ms5840;
 	ms8607_sensor       sensor_ms8607;
 
+#if 0
 	chprintf(bss, "I2C.MS5840: (INFO)  Initializing MS5840 host functions / integration.\n");
 	einfo = ms5840_init_and_assign_host_functions(&host_funcs_ms5840, NULL, &chibi_ms5840_assign_functions);
 	if ( tepht_is_error(einfo) ) {
@@ -1117,9 +1029,10 @@ static msg_t  thread_main_for_i2c_sensors(void *p)
 		chprintf(bss, "I2C.MS5840: (ERROR) Unable to continue.\n");
 		return 1;
 	}
+#endif
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Initializing MS8607 host functions / integration.\n");
-	einfo = ms8607_init_and_assign_host_functions(&host_funcs_ms8607, NULL, &chibi_ms8607_assign_functions);
+	einfo = tepht_init_and_assign_host_functions(&host_funcs_for_tepht, NULL, &chibi_tepht_assign_functions);
 	if ( tepht_is_error(einfo) ) {
 		chprintf(bss, "I2C.MS8607: (ERROR) In function `ms8607_init_and_assign_host_functions`:\n");
 		chibi_print_tepht_error_line(
@@ -1129,7 +1042,7 @@ static msg_t  thread_main_for_i2c_sensors(void *p)
 	}
 
 	chprintf(bss, "I2C.MS5840: (INFO)  Initializing MS5840 sensor object.\n");
-	einfo = ms5840_init_sensor(&sensor_ms5840, &host_funcs_ms5840);
+	einfo = ms5840_init_sensor(&sensor_ms5840, &host_funcs_for_tepht);
 	if ( tepht_is_error(einfo) ) {
 		chprintf(bss, "I2C.MS5840: (ERROR) In function `ms5840_init_sensor`:\n");
 		chibi_print_tepht_error_line(
@@ -1140,7 +1053,7 @@ static msg_t  thread_main_for_i2c_sensors(void *p)
 
 
 	chprintf(bss, "I2C.MS8607: (INFO)  Initializing MS8607 sensor object.\n");
-	einfo = ms8607_init_sensor(&sensor_ms8607, &host_funcs_ms8607);
+	einfo = ms8607_init_sensor(&sensor_ms8607, &host_funcs_for_tepht);
 	if ( tepht_is_error(einfo) ) {
 		chprintf(bss, "I2C.MS8607: (ERROR) In function `ms8607_init_sensor`:\n");
 		chibi_print_tepht_error_line(
