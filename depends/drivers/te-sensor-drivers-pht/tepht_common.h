@@ -5,6 +5,30 @@
 #include <stddef.h>
 #include <inttypes.h>
 
+#if 0
+// Below is part of an abandoned-but-tempting way to store debug information
+// in a compiler-and-platform-agnostic manner. However, getting it to work
+// in a way that's both efficient and safe (ex: for critical software) might
+// require static analysis tools, and using those static analysis tools as
+// part of the project's build process (e.g. to learn how many functions
+// there are and how many times we might need to store {line,file,func} rows).
+
+// Current proces for sizing this parameter is to run this command from this
+// project's directory:
+//   grep -P '\b([a-zA-Z0-9]+)_(error|success)\b' ./* | wc -l
+// This will count all instances of things like `ms8607_error(...)`, since
+// every appearance of that macro can potentially add one row to this database.
+// The pathological scenario is that some program manages to somehow get
+// every single error in the library to be emitted, which would add a row
+// for every one of those instances. If we can still have space left over
+// even after that happens, then we will never run out.
+#ifndef TEPHT_DEBUG_FRAME_DB_ROW_CAPACITY
+#define TEPHT_DEBUG_FRAME_DB_ROW_CAPACITY ((size_t)128)
+#endif
+
+typedef uint16_t  tepht_dframe_handle;
+#endif
+
 /// \brief   Boolean type with predictable storage size.
 ///
 /// \details This type is used instead of <stdbool.h>'s `bool` type, as the `bool`
@@ -15,9 +39,6 @@
 ///          whenever they appear in a struct or as a function parameter.
 ///
 typedef uint8_t  tepht_bool;
-
-
-// TODO: Copy the "host_functions" structure into here and update docs.
 
 typedef void  (*tepht_string_printing_fn)(void *printer_context, const char* str, size_t len);
 
@@ -259,6 +280,218 @@ size_t tepht_buffer_printer_get_byte_count(tepht_buffer_printer *printer);
 /// Resets the given `tepht_buffer_printer`'s print cursor to the 0 position
 /// and places a single '\0' character into that position in the buffer.
 void tepht_buffer_printer_clear(tepht_buffer_printer *printer);
+
+///
+/// \brief  This structure is used by the MS5840 driver to specify I2C transfers
+///         for the callbacks that implement I2C functionality for the driver.
+///
+typedef struct tepht_i2c_controller_packet {
+	/// \brief Address to peripheral device
+	uint16_t address;
+
+	/// \brief Length of data array
+	uint16_t data_length;
+
+	/// \brief Data array containing all data to be transferred
+	uint8_t *data;
+} tepht_i2c_controller_packet;
+
+///
+/// \brief    This structure allows the caller to provide implementations for the
+///           dependencies of the various TE Connectivity PHT sensors.
+///           Most of what is required is I2C functionality.
+///
+/// \details  Some patterns are employed to keep the driver and callbacks
+///           flexible and thread-safe:
+///    - A `caller_context` pointer is passed from the caller into the driver,
+///        and then from the driver into these callbacks. This is what allows
+///        the caller and their callbacks to communicate and persist data
+///        across calls into the driver (and to do so without relying on
+///        global variables or thread-local-storage).
+///    - The return value is usually the `tepht_status` enum, but only one of
+///        two possible enum values shall be returned from the callback:
+///        `tepht_status_ok` and `tepht_status_callback_error`.
+///    - Returning `tepht_status_ok` indicates that the callback completed its
+///        operation (usually an I2C transaction) successfully. This tells the
+///        driver that it can continue working.
+///    - Returning `tepht_status_callback_error` indicates that something
+///        went wrong. The driver will typically return from its own function
+///        immediately after receiving this error code from a callback. This
+///        is intended primarily as a way to provide the driver with "go / no-go"
+///        information, and nothing more specific than that. If the caller needs
+///        to return more specific error details from a failed callback,
+///        the `caller_context` argument should be used for this purpose.
+///
+typedef struct tepht_host_functions {
+	/// \brief  Internal state; do not modify.
+	uint8_t  validated_;
+
+	/// \brief   Callback that shall implement I2C packet reading (receive|rx) functionality.
+	///
+	/// \details This callback (caller-supplied function) shall read an I2C packet
+	///          from the I2C bus that the sensor is connected to.
+	///          This allows the driver to complete I2C transfers without
+	///          directly depending on any one specific I2C implementation.
+	///
+	///          This callback is required: no driver will be able to
+	///          retrieve readings from the sensor without it.
+	///
+	///          If the polling interface is used (TODO: call out the function name)
+	///          then this function must distinguish between I2C NACK responses
+	///          (by returning `tepht_status_callback_i2c_nack`) and all other possibly
+	///          negative results from I2C transfers (by returning `tepht_status_callback_error`).
+	///          If this behavior is not implemented while the polling interface
+	///          is in use, then the polling interface will always report failure.
+	///          This is necessary for polling because the MS5840 and MS8607
+	///          (for example) use a NACK response to indicate that the
+	///          controller must wait a litte bit longer before a measurement
+	///          result becomes available.
+	///
+	/// \return  tepht_status : Lets the driver know if the I2C transmit was successful.
+	///        - tepht_status_ok : I2C transfer completed successfully
+	///        - tepht_status_callback_error : Problem with i2c transfer
+	///        - tepht_status_callback_i2c_nack : I2C peripheral responded with NACK
+	///
+	tepht_status_u16  (*i2c_controller_read)(void *caller_context, tepht_i2c_controller_packet *const);
+
+	/// \brief   Callback that shall implement I2C packet writing (trasmit|tx) functionality.
+	///
+	/// \details This callback (caller-supplied function) shall write an I2C packet
+	///          to the I2C bus that the sensor is connected to.
+	///          This allows the driver to complete I2C transfers without
+	///          directly depending on any one specific I2C implementation.
+	///
+	///          This callback is required: no driver will be able to
+	///          retrieve readings from the sensor without it.
+	///
+	/// \return  tepht_status : Lets the driver know if the I2C transmit was successful.
+	///        - tepht_status_ok : I2C transfer completed successfully
+	///        - tepht_status_callback_error : Problem with i2c transfer
+	///
+	tepht_status_u16  (*i2c_controller_write)(void *caller_context, tepht_i2c_controller_packet *const);
+
+	/// \brief   Callback that shall implement I2C packet writing (trasmit|tx) functionality,
+	///          but does not transmit a "stop" bit at the end of the I2C packet.
+	///
+	/// \details This callback is currently MS8607-specific and will not be used
+	///          in other drivers (which is only the MS5840, as of this writing).
+	///
+	///          This callback (caller-supplied function) shall write an I2C packet
+	///          to the I2C bus that the MS8607 sensor is connected to.
+	///          Unlike the `i2c_controller_write_packet`  function, this version
+	///          shall NOT write a "stop" bit at the end of the packet.
+	///
+	///          If the caller's I2C implementation is not capable of this,
+	///          then it is recommended that the caller provide a stub function
+	///          that returns `tepht_status_callback_error`. The caller
+	///          should then prevent any use of the MS8607's "hold" mode.
+	///
+	///          This callback is optional: the MS8607 driver can retrieve
+	///          readings from the MS8607 sensor without it, but it becomes
+	///          necessary if the sensor is used in "hold" mode
+	///          (`ms8607_humidity_i2c_controller_mode : ms8607_i2c_hold`).
+	///
+	/// \return  tepht_status : Lets the driver know if the I2C transmit was successful.
+	///        - tepht_status_ok : I2C transfer completed successfully
+	///        - tepht_status_callback_error : Problem with i2c transfer
+	///
+	tepht_status_u16  (*i2c_controller_write_no_stop)(void *caller_context, tepht_i2c_controller_packet *const);
+
+	/// \brief   Callback that shall wait for the given number of milliseconds when called.
+	///
+	/// \details If the caller is operating in a multi-threaded environment
+	///          (including software-based schedulers running on single-threaded
+	///          processors), then it is perfectly acceptable to yield this time
+	///          to other threads or fibers.
+	///
+	tepht_status_u16  (*sleep_ms)(void *caller_context, uint32_t milliseconds);
+
+	/// \brief  Optional callback that is used to print, report, or log errors or diagnostic messages.
+	void  (*print_string)(void *caller_context, const char *text);
+
+	/// \brief  Optional callback that is used to print, report, or log errors or diagnostic messages.
+	void  (*print_int64)(void *caller_context,  int64_t  number, uint8_t pad_width,  tepht_bool  pad_with_zeroes);
+
+} tepht_host_functions;
+
+// For internal use.
+//
+// The functions that need host functions validated will either call this on
+// their own or do their own (more specific) validation.
+//
+// This does need to be a public symbol, though, as it is used by multiple
+// drivers.
+tepht_status  tepht_validate_mandatory_depends(tepht_host_functions *deps);
+
+/// \brief    Creates a `tepht_host_functions` object (the `dependencies` parameter)
+///           to store function pointers that implement the driver's dependencies.
+///
+/// \details  The purpose of this function is to create a `tepht_host_functions`
+///           object, which can then be used by the drivers to satisfy
+///           their dependencies.
+///
+///           This must be called before calling any `*_init_sensor`
+///           function, as the `*_init_sensor` functions require the
+///           `tepht_host_functions` object that is populated by this function.
+///
+///           This function works in 3 steps:
+///
+///           (1) It initializes the `tepht_host_functions` object
+///             given by the `dependencies` parameter. This places the object
+///             into a known state so that the 3rd phase of this function can
+///             know which functions were implemented by the caller/host.
+///
+///           (2) It calls the given `assign_functions` callback on `dependencies`.
+///             The callback should create function pointers from host functions
+///             that implement the various requirements of the driver, such as
+///             I2C I/O and timing mechanisms. Those function pointers should be
+///             assigned to the various members of the `dependencies` structure.
+///             See the `tepht_host_functions` for details on the necessary functions.
+///
+///           (3) After the callback returns, this function then validates
+///             the resulting `tepht_host_functions` object to ensure that
+///             minimal requirements are met. Appropriate error codes are
+///             returned if the driver's dependencies were not satisfied.
+///
+///           The `assign_functions` callback shall NOT assign NULL to any
+///           members of the `tepht_host_functions *dependencies` structure.
+///           When a function pointer is optional and no implementation
+///           is available, `assign_functions` should leave that member
+///           unmodified.
+///
+///           The `tepht_init_and_assign_host_functions` function will
+///           have already assigned stubs (and missing requirement detectors)
+///           to the members of the `tepht_host_functions` structure.
+///
+///           This function is reentrant, idempotent, non-blocking,
+///           and does not perform any I/O. These properties assume that
+///           the `assign_functions` callback also possesses the same
+///           corresponding properties. This function is thread-safe
+///           as long as, during this function's execution, no other threads
+///           read from or write to the objects pointed to by this function's
+///           arguments.
+///
+/// \param[out] tepht_host_functions* : Struct with callbacks that implement I2C controller functions.
+/// \param[in] void* caller_context : This is passed to the `assign_functions`
+///           callback's `caller_context` parameter.
+/// \param[in] void (*assign_functions)(tepht_host_functions *dependencies, void *caller_context):
+///           Pointer to a caller-implemented function that shall assign pointers
+///           to implementation functions that are required by the driver.
+///
+/// \return tepht_error_info : `tepht_error_get_status(error_info)` would have these possibilities:
+///       - tepht_status_ok : Returned if everything completed without error.
+///       - tepht_status_null_argument : Returned if the `dependencies` or `assign_functions` parameters were NULL.
+///       - tepht_status_null_host_function : Returned if NULL was assigned to any of the members of `dependencies`.
+///       - tepht_status_i2c_read_unimplemented : Returned if the `i2c_controller_read` function was not assigned.
+///       - tepht_status_i2c_write_unimplemented : Returned if the `i2c_controller_write` function was not assigned.
+///       - tepht_status_sleep_ms_unimplemented : Returned if the `sleep_ms` function was not assigned.
+///
+tepht_error_info  tepht_init_and_assign_host_functions(
+	tepht_host_functions *deps,
+	void *caller_context,
+	void (*assign_functions)(tepht_host_functions *deps, void *caller_context)
+	);
+
 
 typedef struct tepht_pt_sensor_vtable {
 	// Internal, module-level, state. Avoid accessing directly.

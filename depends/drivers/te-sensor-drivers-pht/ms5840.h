@@ -60,111 +60,6 @@ enum ms5840_pressure_resolution {
 
 // Structs
 
-///
-/// \brief  This structure is used by the MS5840 driver to specify I2C transfers
-///         for the callbacks that implement I2C functionality for the driver.
-///
-typedef struct ms5840_i2c_controller_packet {
-	/// \brief Address to peripheral device
-	uint16_t address;
-
-	/// \brief Length of data array
-	uint16_t data_length;
-
-	/// \brief Data array containing all data to be transferred
-	uint8_t *data;
-} ms5840_i2c_controller_packet;
-
-///
-/// \brief    This structure allows the caller to provide implementations for the
-///           MS5840 driver's dependencies, which are mostly I2C functionality.
-///
-/// \details  Some patterns are employed to keep the driver and callbacks
-///           flexible and thread-safe:
-///    - A `caller_context` pointer is passed from the caller into the MS5840
-///        driver, and then from the MS5840 driver into these callbacks. This is
-///        what allows the caller and their callbacks to communicate and persist
-///        data accross calls into the driver (and to do so without relying on
-///        global variables or thread-local-storage).
-///    - The return value is usually the `tepht_status` enum, but only one of
-///        two possible enum values shall be returned from the callback:
-///        `tepht_status_ok` and `tepht_status_callback_error`.
-///    - Returning `tepht_status_ok` indicates that the callback completed its
-///        operation (usually an I2C transaction) successfully. This tells the
-///        driver that it can continue working.
-///    - Returning `tepht_status_callback_error` indicates that something
-///        went wrong. The driver will typically return from its own function
-///        immediately after receiving this error code from a callback. This
-///        is intended primarily as a way to provide the driver with "go / no-go"
-///        information, and nothing more specific than that. If the caller needs
-///        to return more specific error details from a failed callback,
-///        the `caller_context` argument should be used for this purpose.
-///
-typedef struct ms5840_host_functions {
-	/// \brief  Internal state; do not modify.
-	uint8_t  validated_;
-
-	/// \brief   Callback that shall implement I2C packet reading (receive|rx) functionality.
-	///
-	/// \details This callback (caller-supplied function) shall read an I2C packet
-	///          from the I2C bus that the MS5840 sensor is connected to.
-	///          This allows the MS5840 driver to complete I2C transfers without
-	///          directly depending on any one specific I2C implementation.
-	///
-	///          This callback is required: the MS5840 driver will be unable to
-	///          retrieve readings from the MS5840 sensor without it.
-	///
-	///          If the polling interface is used (TODO: call out the function name)
-	///          then this function must distinguish between I2C NACK responses
-	///          (by returning `tepht_status_callback_i2c_nack`) and all other possibly
-	///          negative results from I2C transfers (by returning `tepht_status_callback_error`).
-	///          If this behavior is not implemented while the polling interface
-	///          is in use, then the polling interface will always report failure.
-	///          This is necessary for polling because the MS5840 uses a NACK
-	///          response to indicate that the controller must wait a litte bit
-	///          longer before a measurement result becomes available.
-	///
-	/// \return  tepht_status : Lets the driver know if the I2C transmit was successful.
-	///        - tepht_status_ok : I2C transfer completed successfully
-	///        - tepht_status_callback_error : Problem with i2c transfer
-	///        - tepht_status_callback_i2c_nack : I2C peripheral responded with NACK
-	///
-	tepht_status  (*i2c_controller_read)(void *caller_context, ms5840_i2c_controller_packet *const);
-
-	/// \brief   Callback that shall implement I2C packet writing (trasmit|tx) functionality.
-	///
-	/// \details This callback (caller-supplied function) shall write an I2C packet
-	///          to the I2C bus that the MS5840 sensor is connected to.
-	///          This allows the MS5840 driver to complete I2C transfers without
-	///          directly depending on any one specific I2C implementation.
-	///
-	///          This callback is required: the MS5840 driver will be unable to
-	///          retrieve readings from the MS5840 sensor without it.
-	///
-	/// \return  tepht_status : Lets the driver know if the I2C transmit was successful.
-	///        - tepht_status_ok : I2C transfer completed successfully
-	///        - tepht_status_callback_error : Problem with i2c transfer
-	///
-	tepht_status  (*i2c_controller_write)(void *caller_context, ms5840_i2c_controller_packet *const);
-
-	/// \brief   Callback that shall wait for the given number of milliseconds when called.
-	///
-	/// \details If the caller is operating in a multi-threaded environment
-	///          (including software-based schedulers running on single-threaded
-	///          processors), then it is perfectly acceptable to yield this time
-	///          to other threads or fibers.
-	///
-	tepht_status  (*sleep_ms)(void *caller_context, uint32_t milliseconds);
-
-	/// \brief  Optional callback that is used to print, report, or log errors or diagnostic messages.
-	void  (*print_string)(void *caller_context, const char *text);
-
-	/// \brief  Optional callback that is used to print, report, or log errors or diagnostic messages.
-	void  (*print_int64)(void *caller_context,  int64_t  number, uint8_t pad_width,  tepht_bool  pad_with_zeroes);
-
-} ms5840_host_functions;
-
-
 /// \brief   Structure that tracks the configuration and status of an MS5840 sensor.
 ///
 /// \details The members of this structure are all considered "internal" or "private"
@@ -180,7 +75,7 @@ typedef struct ms5840_host_functions {
 ///
 typedef struct ms5840_sensor {
 	// Internal state. Avoid accessing directly.
-	const ms5840_host_functions                *host_funcs;
+	const tepht_host_functions                 *host_funcs;
 	const tepht_driver_context_accessor        context_accessor;
 	enum ms5840_pressure_resolution            psensor_resolution_osr;
 	tepht_bool                                 psensor_coeff_read;
@@ -189,75 +84,6 @@ typedef struct ms5840_sensor {
 
 
 // Functions
-
-/// \brief    Creates a `ms5840_host_functions` object (the `dependencies` parameter)
-///           to store function pointers that implement the driver's dependencies.
-///
-/// \details  The purpose of this function is to create a `ms5840_host_functions`
-///           object, which can then be used by the MS5840 driver to satisfy
-///           its dependencies.
-///
-///           This must be called before calling the `ms5840_init_sensor`
-///           function, as the `ms5840_init_sensor` function requires the
-///           `ms5840_host_functions` object that is populated by this function.
-///
-///           This function works in 3 steps:
-///
-///           (1) It initializes the `ms5840_host_functions` object
-///             given by the `dependencies` parameter. This places the object
-///             into a known state so that the 3rd phase of this function can
-///             know which functions were implemented by the caller/host.
-///
-///           (2) It calls the given `assign_functions` callback on `dependencies`.
-///             The callback should create function pointers from host functions
-///             that implement the various requirements of the MS5840 driver,
-///             such as I2C I/O and timing mechanisms. Those function pointers
-///             should be assigned to the various members of the `dependencies`
-///             structure. See the `ms5840_host_functions` for details on the
-///             necessary functions.
-///
-///           (3) After the callback returns, this function then validates
-///             the resulting `ms5840_host_functions` object to ensure that
-///             minimal requirements are met. Appropriate error codes are
-///             returned if the driver's dependencies were not satisfied.
-///
-///           The `assign_functions` callback shall NOT assign NULL to any
-///           members of the `ms5840_host_functions *dependencies` structure.
-///           When a function pointer is optional and no implementation
-///           is available, `assign_functions` should leave that member
-///           unmodified.
-///
-///           The `ms5840_init_and_assign_host_functions` function will
-///           have already assigned stubs (and missing requirement detectors)
-///           to the members of the `ms5840_host_functions` structure.
-///
-///           This function is reentrant, idempotent, non-blocking,
-///           and does not perform any I/O. These properties assume that
-///           the `assign_functions` callback also possesses the same
-///           corresponding properties. This function is thread-safe
-///           as long as, during this function's execution, no other threads
-///           read from or write to the objects pointed to by this function's
-///           arguments.
-///
-/// \param[out] ms5840_host_functions* : Struct with callbacks that implement I2C controller functions.
-/// \param[in] void* caller_context : This is passed to the `assign_functions`
-///           callback's `caller_context` parameter.
-/// \param[in] void (*assign_functions)(ms5840_host_functions *dependencies, void *caller_context):
-///           Pointer to a caller-implemented function that shall assign pointers
-///           to implementation functions that are required by the driver.
-///
-/// \return tepht_status : status of MS5840
-///       - tepht_status_null_argument : Returned if the `dependencies` or `assign_functions` parameters were NULL.
-///       - tepht_status_null_host_function : Returned if NULL was assigned to any of the members of `dependencies`.
-///       - tepht_status_i2c_read_unimplemented : Returned if the `i2c_controller_read` function was not assigned.
-///       - tepht_status_i2c_write_unimplemented : Returned if the `i2c_controller_write` function was not assigned.
-///       - tepht_status_sleep_ms_unimplemented : Returned if the `sleep_ms` function was not assigned.
-///
-tepht_error_info  ms5840_init_and_assign_host_functions(
-	ms5840_host_functions *deps,
-	void *caller_context,
-	void (*assign_functions)(ms5840_host_functions *deps, void *caller_context)
-	);
 
 // TODO: Ensure that `ms5840_reset` always gets called, even if the caller skips it.
 // (e.g., by calling it lazily from whatever might need it).
@@ -269,7 +95,7 @@ tepht_error_info  ms5840_init_and_assign_host_functions(
 ///           default configuration. This function does not actually communicate
 ///           with the sensor in any way.
 ///
-///           This must be called after `ms5840_init_and_assign_host_functions`
+///           This must be called after `tepht_init_and_assign_host_functions`
 ///           has been called at least once (to obtain the argument for the
 ///           `depends_to_use` parameter), and it must be called before any
 ///           other function that requires a `ms5840_sensor*` type parameter
@@ -282,7 +108,7 @@ tepht_error_info  ms5840_init_and_assign_host_functions(
 ///           no other threads write to that call's `depends_to_use` instance.
 ///
 /// \param[out] ms5840_sensor *new_sensor : The new sensor object.
-/// \param[in]  const ms5840_host_functions *depends_to_use : Specifies the
+/// \param[in]  const tepht_host_functions *depends_to_use : Specifies the
 ///           functions that this sensor can call to do things such as I2C I/O
 ///           and timing.
 ///
@@ -294,13 +120,13 @@ tepht_error_info  ms5840_init_and_assign_host_functions(
 ///       - tepht_status_i2c_write_unimplemented : Returned if the `i2c_controller_write` function was not assigned.
 ///       - tepht_status_sleep_ms_unimplemented : Returned if the `sleep_ms` function was not assigned.
 ///
-tepht_error_info  ms5840_init_sensor(ms5840_sensor *new_sensor,  ms5840_host_functions *depends_to_use);
+tepht_error_info  ms5840_init_sensor(ms5840_sensor *new_sensor,  tepht_host_functions *depends_to_use);
 
 /// \brief Check whether MS5840 device is connected
 ///
 /// \param[in] ms5840_sensor *sensor : Sensor object to test for connectivity.
 /// \param[in] void* caller_context : When this function calls any callbacks
-///         from the `ms5840_host_functions` structure, this will be passed
+///         from the `tepht_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
 /// \return tepht_bool : status of MS5840
@@ -318,13 +144,13 @@ tepht_bool  ms5840_is_connected(ms5840_sensor *sensor,  void *caller_context);
 ///
 /// \param[in] ms5840_sensor *sensor : Object representing the sensor to be reset.
 /// \param[in] void* caller_context : When this function calls any callbacks
-///         from the `ms5840_host_functions` structure, this will be passed
+///         from the `tepht_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
 /// \return tepht_status : status of MS5840
 ///       - tepht_status_ok : I2C transfer completed successfully
 ///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
-///       - tepht_status_callback_error : Error occurred within a ms5840_host_functions function
+///       - tepht_status_callback_error : Error occurred within a tepht_host_functions function
 ///
 tepht_error_info  ms5840_reset(ms5840_sensor *sensor,  void *caller_context);
 
@@ -333,7 +159,7 @@ tepht_error_info  ms5840_reset(ms5840_sensor *sensor,  void *caller_context);
 /// \param[in] ms5840_sensor *sensor : Object representing the sensor to configure
 /// \param[in] ms5840_pressure_resolution : Resolution requested
 /// \param[in] void* caller_context : When this function calls any callbacks
-///         from the `ms5840_host_functions` structure, this will be passed
+///         from the `tepht_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///         (As of this writing, this function does not do any I2C I/O and
 ///         does not call any host functions, so `caller_context` is unused here,
@@ -355,14 +181,14 @@ tepht_error_info  ms5840_set_pressure_resolution(ms5840_sensor *sensor, enum ms5
 /// \param[out] int32_t* : Thousanths of degC temperature value
 /// \param[out] int32_t* : Microbar pressure value (thousanths of millibar)
 /// \param[in]  void* caller_context : When this function calls any callbacks
-///         from the `ms5840_host_functions` structure, this will be passed
+///         from the `tepht_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
 /// \return tepht_status : status of MS5840
 ///       - tepht_status_ok : I2C transfer completed successfully
 ///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
 ///       - tepht_status_null_argument : One or more of the `t`, `p`, or `h` pointers were NULL.
-///       - tepht_status_callback_error : Error occurred within a ms5840_host_functions function
+///       - tepht_status_callback_error : Error occurred within a tepht_host_functions function
 ///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
 ///       - tepht_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
 ///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
@@ -375,14 +201,14 @@ tepht_error_info  ms5840_read_temperature_pressure_int32(ms5840_sensor *sensor, 
 /// \param[out] float* : degC temperature value
 /// \param[out] float* : mbar pressure value
 /// \param[in]  void* caller_context : When this function calls any callbacks
-///         from the `ms5840_host_functions` structure, this will be passed
+///         from the `tepht_host_functions` structure, this will be passed
 ///         directly to those callbacks' `caller_context` parameter.
 ///
 /// \return tepht_status : status of MS5840
 ///       - tepht_status_ok : I2C transfer completed successfully
 ///       - tepht_status_null_sensor : The pointer provided for the `sensor` parameter was NULL.
 ///       - tepht_status_null_argument : One or more of the `t`, `p`, or `h` pointers were NULL.
-///       - tepht_status_callback_error : Error occurred within a ms5840_host_functions function
+///       - tepht_status_callback_error : Error occurred within a tepht_host_functions function
 ///       - tepht_status_eeprom_is_zero : One or more EEPROM coefficients were received as 0, preventing measurement.
 ///       - tepht_status_eeprom_crc_error : CRC check error on the sensor's EEPROM coefficients
 ///       - tepht_status_measurement_invalid : EEPROM is OK and I2C transfer completed, but data received was invalid
