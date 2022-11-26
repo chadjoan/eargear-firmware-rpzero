@@ -1,1 +1,1 @@
-gcc *.c -Wall -std=c99 -lm
+gcc *.c -Wall -Wunused-parameter -std=c99 -lm
