@@ -439,4 +439,10 @@ tepht_status psensor_poll_raw_pressure(ms8607_sensor *sensor, uint64_t microsecs
 ///
 tepht_error_info  ms8607_hsensor_read_user_register(ms8607_sensor *sensor, uint8_t *value, void *caller_context);
 
+/// Acquires a generic PT sensor (pressure and temperature sensor) reference
+/// that allows the sensor to be used in a way that is interchangable with
+/// other sensors that offer the same <tepht_pt_sensor> interface.
+///
+tepht_pt_sensor   ms8607_to_pt_sensor_interface(ms8607_sensor *sensor);
+
 #endif /* MS8607_H_INCLUDED */

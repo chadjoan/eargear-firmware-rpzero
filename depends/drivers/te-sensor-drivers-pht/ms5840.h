@@ -215,10 +215,9 @@ tepht_error_info  ms5840_read_temperature_pressure_int32(ms5840_sensor *sensor, 
 ///
 tepht_error_info  ms5840_read_temperature_pressure_float32(ms5840_sensor *sensor, float *, float *, void *caller_context);
 
-/// \brief    Acquires a generic PT sensor (pressure and temperature sensor)
-///           reference that allows the sensor to be used in a way that is
-///           interchangable with other sensors that offer the same
-///           `tepht_pt_sensor` interface.
+/// Acquires a generic PT sensor (pressure and temperature sensor) reference
+/// that allows the sensor to be used in a way that is interchangable with
+/// other sensors that offer the same <tepht_pt_sensor> interface.
 ///
 tepht_pt_sensor   ms5840_to_pt_sensor_interface(ms5840_sensor *sensor);
 

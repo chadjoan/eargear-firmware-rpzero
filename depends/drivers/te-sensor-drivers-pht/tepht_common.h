@@ -511,6 +511,28 @@ tepht_error_info  tepht_pt_sensor_reset(tepht_pt_sensor  sensor,  void *caller_c
 tepht_error_info  tepht_pt_sensor_read_temperature_pressure_int32(
 	tepht_pt_sensor  sensor, int32_t *t, int32_t *p, void *caller_context);
 
+
+char *tepht_int64_to_string(int64_t num, uint8_t *output_len, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with, uint8_t base);
+char *tepht_uint64_to_string(uint64_t num, uint8_t *output_len, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with, uint8_t base);
+
+///
+char *tepht_int64_to_binary(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_int64_to_binary_default(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+char *tepht_uint64_to_binary(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_uint64_to_binary_default(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+char *tepht_int64_to_octal(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_int64_to_octal_default(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+char *tepht_uint64_to_octal(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_uint64_to_octal_default(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+char *tepht_int64_to_dec(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_int64_to_dec_default(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+char *tepht_uint64_to_dec(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_uint64_to_dec_default(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+char *tepht_int64_to_hex(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_int64_to_hex_default(int64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+char *tepht_uint64_to_hex(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen, uint8_t min_width, char pad_with);
+char *tepht_uint64_to_hex_default(uint64_t num, uint8_t *outlen, char *buffer, uint8_t buflen);
+
 /// Runs all unittests in the `tepht_common` module.
 void tepht_run_unittests(tepht_string_printer  *printer);
 
