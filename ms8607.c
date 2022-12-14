@@ -152,8 +152,8 @@ static const char *ms8607_get_driver_prefix(void *ms8607_sensor) {
 
 static tepht_driver_context_accessor_vtable  ms8607_dca_vtable =
 	{
-		.get_device_model_name = ms8607_get_device_model_name,
-		.get_driver_prefix     = ms8607_get_driver_prefix
+		.get_device_model_name = &ms8607_get_device_model_name,
+		.get_driver_prefix     = &ms8607_get_driver_prefix
 	};
 
 static tepht_driver_context_accessor  ms8607_default_dca =
@@ -226,6 +226,8 @@ tepht_error_info  ms8607_init_sensor(ms8607_sensor *new_sensor,  tepht_host_func
 
 	ms8607_sensor  const_init_sensor = {
 		.host_funcs                  = depends_to_use,
+		.context_accessor.self       = new_sensor,
+		.context_accessor.vtable     = &ms8607_dca_vtable,
 
 		// Defaults
 		.hsensor_conversion_time     = HSENSOR_CONVERSION_TIME_12b,
