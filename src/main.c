@@ -18,6 +18,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "assert.h"
 #include "ch.h"
 #include "hal.h"
 #include "test.h"
@@ -129,7 +130,19 @@ BaseSequentialStream *bss;
 	#define MAX_NUM_READINGS_PER_SENSOR (16)
 #endif
 
-static void print_thousandths(BaseSequentialStream *bss, int32_t number)
+
+static void print_thousandths_i64(BaseSequentialStream *bss, int64_t number)
+{
+	int64_t abs = number;
+	const char *sign = "";
+	if ( number < 0 ) {
+		abs = -number;
+		sign = "-";
+	}
+	chprintf(bss, "%s%d.%d%d%d", sign, (int)(abs/1000), (int)((abs/100)%10), (int)((abs/10)%10), (int)(abs%10) );
+}
+
+static void print_thousandths_i32(BaseSequentialStream *bss, int32_t number)
 {
 	int32_t abs = number;
 	const char *sign = "";
@@ -156,19 +169,6 @@ static void print_uint8_as_binary(BaseSequentialStream  *bss,  uint8_t  the_byte
 	chprintf(bss, "%s", binstr);
 }
 
-#if 0
-/// Returns the result of `(a - b)`,
-static systime_t subtract_wrap_saturate(systime_t a, systime_b)
-{
-}
-
-#define subtract_wrap_saturate(a,b) ( \
-	(sizeof(a) == 8 || sizeof(b) == 8) ? subtract_wrap_saturate_64((uint64_t)(a), (uint64_t)(b)) : \
-	(sizeof(a) == 4 || sizeof(b) == 4) ? subtract_wrap_saturate_32((uint32_t)(a), (uint32_t)(b)) : \
-	(sizeof(a) == 2 || sizeof(b) == 2) ? subtract_wrap_saturate_16((uint16_t)(a), (uint16_t)(b)) : \
-	subtract_wrap_saturate_8((uint8_t)(a), (uint8_t)(b)) )
-#endif
-
 static uint64_t ticks2microsecs(systime_t ticks)
 {
 	// 100 seconds worth of microseconds, in system ticks.
@@ -176,8 +176,16 @@ static uint64_t ticks2microsecs(systime_t ticks)
 	if ( hundred_microsecs_as_ticks == 0 )
 		hundred_microsecs_as_ticks = US2ST(100L);
 
+	// For some reason, testing showed that this timing routine, without the
+	// fudge factor, was off by a factor of 10. That is, 10 seconds would pass,
+	// and the timer would only record a single second as passing.
+	// Thus, we need this `fudge_factor` to bring it to correctness.
+	// It is still not clear why 100/100 != 1 in this case, but whatever,
+	// SCIENCE knows best.
+	int32_t fudge_factor = 10;
+
 	int64_t tmp_ticks = ticks;
-	int64_t microsecs = (tmp_ticks*100LL)/hundred_microsecs_as_ticks;
+	int64_t microsecs = (tmp_ticks*(int64_t)(100*fudge_factor))/hundred_microsecs_as_ticks;
 	return (uint64_t)microsecs;
 }
 
@@ -199,15 +207,6 @@ static uint64_t calculate_system_time_in_usecs(void)
 
 	return usecs;
 }
-
-
-// Measurements are in thousandths of millibars.
-#if 0
-static int32_t ms8607_pressure_data[MAX_NUM_READINGS_PER_SENSOR];
-static int32_t ms5840_pressure_data[MAX_NUM_READINGS_PER_SENSOR];
-static size_t  ms8607_pressure_data_latest_index = MAX_NUM_READINGS_PER_SENSOR;
-static size_t  ms5840_pressure_data_latest_index = MAX_NUM_READINGS_PER_SENSOR;
-#endif
 
 
 // The maximum is the amount of sensors that could ever be plugged into this
@@ -402,7 +401,7 @@ static void on_pressure_measurement(BaseSequentialStream *stdout, const measurem
 	chprintf(stdout, "\n");
 
 	chprintf(stdout, "New pressure reading from %s: ", m->sensor_name);
-	print_thousandths(stdout, m->uncalibrated_value);
+	print_thousandths_i32(stdout, m->uncalibrated_value);
 	chprintf(stdout,      " mbar (uncalibrated)\n\n");
 
 	all_sensor_sum = 0;
@@ -507,34 +506,34 @@ static void on_pressure_measurement(BaseSequentialStream *stdout, const measurem
 	}
 
 	chprintf(stdout, "Pressure reading from %s: ", m->sensor_name);
-	print_thousandths(stdout, m->value);
+	print_thousandths_i32(stdout, m->value);
 	chprintf(stdout,     " mbar   (");
-	print_thousandths(stdout, m->uncalibrated_value);
+	print_thousandths_i32(stdout, m->uncalibrated_value);
 	chprintf(stdout,     " mbar, uncalibrated)");
 	chprintf(stdout,     " at time %d usecs", time_now);
 	chprintf(stdout,     "\n");
 
 	chprintf(stdout, "Effective target (CPAP) pressure:  ");
-	print_thousandths(stdout, filtered_pressures[PT_SENSOR_CPAP_IDX]);
+	print_thousandths_i32(stdout, filtered_pressures[PT_SENSOR_CPAP_IDX]);
 	chprintf(stdout,     " mbar   (");
-	print_thousandths(stdout, latest_pressures[PT_SENSOR_CPAP_IDX]);
+	print_thousandths_i32(stdout, latest_pressures[PT_SENSOR_CPAP_IDX]);
 	chprintf(stdout,     " mbar, latest, calibrated)\n");
 
 	chprintf(stdout, "Effective chamber (ear) pressure:  ");
-	print_thousandths(stdout, filtered_pressures[PT_SENSOR_PUMP_IDX]);
+	print_thousandths_i32(stdout, filtered_pressures[PT_SENSOR_PUMP_IDX]);
 	chprintf(stdout,     " mbar   (");
-	print_thousandths(stdout, latest_pressures[PT_SENSOR_PUMP_IDX]);
+	print_thousandths_i32(stdout, latest_pressures[PT_SENSOR_PUMP_IDX]);
 	chprintf(stdout,     " mbar, latest, calibrated)\n");
 
 	chprintf(stdout, "Effective return (ear) pressure:   ");
-	print_thousandths(stdout, filtered_pressures[PT_SENSOR_RETURN_IDX]);
+	print_thousandths_i32(stdout, filtered_pressures[PT_SENSOR_RETURN_IDX]);
 	chprintf(stdout,     " mbar   (");
-	print_thousandths(stdout, latest_pressures[PT_SENSOR_RETURN_IDX]);
+	print_thousandths_i32(stdout, latest_pressures[PT_SENSOR_RETURN_IDX]);
 	chprintf(stdout,     " mbar, latest, calibrated)\n");
 
 	int32_t pressure_drop = filtered_pressures[PT_SENSOR_PUMP_IDX] - filtered_pressures[PT_SENSOR_RETURN_IDX];
 	chprintf(stdout, "Pressure drop in tubing:           ");
-	print_thousandths(stdout, pressure_drop);
+	print_thousandths_i32(stdout, pressure_drop);
 	chprintf(stdout,     " mbar\n");
 
 	// Simple calculation, for now:
@@ -550,12 +549,12 @@ static void on_pressure_measurement(BaseSequentialStream *stdout, const measurem
 
 	int32_t pressure_diff = ear_pressure - filtered_pressures[PT_SENSOR_CPAP_IDX];
 	chprintf(stdout, "Pressure difference-to-target:     ");
-	print_thousandths(stdout, pressure_diff);
+	print_thousandths_i32(stdout, pressure_diff);
 	chprintf(stdout,     " mbar\n");
 
 	uint64_t time_diff = time_now - last_time;
 	chprintf(stdout, "Time difference (ms):              ");
-	print_thousandths(stdout, (uint32_t)time_diff);
+	print_thousandths_i32(stdout, (uint32_t)time_diff);
 	chprintf(stdout,     "\n");
 
 #if 0
@@ -1637,6 +1636,212 @@ static msg_t  thread_main_for_sensor_calibration(void *p) {
 #endif
 #endif
 
+typedef struct bcm2835_timer_register_map
+{
+	uint32_t  cs;
+	uint32_t  clo;
+	uint32_t  chi;
+	uint32_t  c0;
+	uint32_t  c1;
+	uint32_t  c2;
+	uint32_t  c3;
+} bcm2835_timer_register_map;
+
+static volatile bcm2835_timer_register_map  *bcm2835_timer_registers =
+	((volatile bcm2835_timer_register_map*)0x20003000);
+
+static inline uint64_t bcm2835_get_time_usecs(void)
+{
+	uint32_t  lo = bcm2835_timer_registers->clo;
+	uint32_t  hi = bcm2835_timer_registers->chi;
+	return ((uint64_t)lo) | (((uint64_t)hi) << 32);
+}
+
+static WORKING_AREA(waThread1, 16384);
+static msg_t  thread_main_for_granularity_test(void *p)
+{
+	(void)p;
+	chRegSetThreadName("granularity_test");
+
+	BaseSequentialStream  *stdout = (BaseSequentialStream *)&SD1;
+
+	chprintf(stdout, "\n");
+	chprintf(stdout, "Granularity testing time!\n");
+	chprintf(stdout, "\n");
+
+	// We do this in two phases, because it's important to keep `chprintf`
+	// separated from the sampling of the timer. `chprintf` can be very slow,
+	// as it will block during the time it takes the uart peripheral to
+	// empty the I/O buffer into the 115200 baud line.
+	// Hence, we do all of the sampling first and store it into an array
+	// (because array access should be incredibly fast and not affect timing),
+	// then do the time-consuming I/O stuff afterwards.
+	const size_t n_samples = 10;
+	size_t    i;
+	uint64_t  time_samples[n_samples];
+	uint32_t  iters_reqd[n_samples];
+	uint64_t  time_prev = 0;
+	for ( i = 0; i < n_samples; i++ )
+	{
+		uint64_t time_now  = 0;
+		uint32_t n_iters   = 0;
+		do {
+			time_now = bcm2835_get_time_usecs();
+			n_iters++;
+		} while ( time_now == time_prev );
+
+		time_samples[i] = time_now;
+		iters_reqd[i] = n_iters;
+		time_prev = time_now;
+	}
+
+	uint64_t delta_avg = (time_samples[n_samples-1] - time_samples[0]) / (n_samples-1);
+
+	for ( i = 0; i < n_samples; i++ )
+	{
+		chprintf(stdout, "Sample[%d]: msecs=", (int)i);
+		print_thousandths_i64(stdout, time_samples[i]);
+		chprintf(stdout, ",  iters=%d", (int)iters_reqd[i]);
+		if ( i > 0 )
+		{
+			uint64_t delta = time_samples[i] - time_samples[i-1];
+			chprintf(stdout, ",  delta=");
+			print_thousandths_i64(stdout, delta);
+
+			// Sorry, I forget what this is actually called.
+			int64_t deviation = delta - delta_avg;
+			chprintf(stdout, ",  deviation=");
+			print_thousandths_i64(stdout, deviation);
+		}
+		chprintf(stdout, "\n");
+	}
+
+	chprintf(stdout, "Average delta: ");
+	print_thousandths_i64(stdout, delta_avg);
+	chprintf(stdout, "\n");
+
+#if 0
+// Output on 2022-12-16:
+```
+Raspberry Pi Bootcode
+Read File: config.txt, 9721
+Read File: start.elf, 820188 (bytes)
+Read File: fixup_rc.dat, 3159 (bytes)
+Main (SD1 started)
+GPU start time, milliseconds: 1845.455
+
+Granularity testing time!
+
+Sample[0]: msecs=1845.631,  iters=1
+Sample[1]: msecs=1845.632,  iters=2,  delta=0.001,  deviation=0.000
+Sample[2]: msecs=1845.633,  iters=5,  delta=0.001,  deviation=0.000
+Sample[3]: msecs=1845.634,  iters=4,  delta=0.001,  deviation=0.000
+Sample[4]: msecs=1845.635,  iters=4,  delta=0.001,  deviation=0.000
+Sample[5]: msecs=1845.636,  iters=5,  delta=0.001,  deviation=0.000
+Sample[6]: msecs=1845.637,  iters=4,  delta=0.001,  deviation=0.000
+Sample[7]: msecs=1845.638,  iters=4,  delta=0.001,  deviation=0.000
+Sample[8]: msecs=1845.639,  iters=5,  delta=0.001,  deviation=0.000
+Sample[9]: msecs=1845.640,  iters=4,  delta=0.001,  deviation=0.000
+Average delta: 0.001
+```
+
+// Conclusion: The CLO+CHI registers on the BCM2835 offer microsecond-granularity
+//   awareness of the passage of time. This is more than good enough for timing
+//   I2C requests against the demands of the sensors' datasheets.
+#endif
+
+	return 0;
+}
+
+#if 0
+static uint64_t  sleep_based_usecs = 0;
+
+static WORKING_AREA(waThread1, 16384);
+static msg_t  thread_main_for_timing_race(void *p)
+{
+	(void)p;
+	chRegSetThreadName("timing_race");
+
+	BaseSequentialStream  *stdout = (BaseSequentialStream *)&SD1;
+
+	uint64_t gpu_ticks_start = bcm2835_get_time_usecs();
+
+	while(TRUE)
+	{
+		uint64_t time_now = calculate_system_time_in_usecs();
+		if ( time_started == 0 ) {
+			last_time = time_now;
+			time_started = 1;
+		}
+
+		chprintf(stdout, "Time based on systime:  ");
+		print_thousandths_i64(stdout, time_now);
+		chprintf(stdout, "\n");
+
+		chprintf(stdout, "Time based on sleeping: ");
+		print_thousandths_i64(stdout, sleep_based_usecs);
+		chprintf(stdout, "\n");
+
+		uint64_t  gpu_ticks_now = bcm2835_get_time_usecs();
+		chprintf(stdout, "Ticks based on gpu?:    ");
+		print_thousandths_i64(stdout, gpu_ticks_now - gpu_ticks_start);
+		chprintf(stdout, "\n");
+
+		chprintf(stdout, "\n");
+
+		chThdSleepMilliseconds(200);
+	}
+	assert(0);
+
+	return 0;
+}
+
+static WORKING_AREA(waThread3, 16384);
+static msg_t  thread_main_for_sleep_timer(void *p)
+{
+	(void)p;
+	chRegSetThreadName("sleep_timer");
+
+	while(TRUE)
+	{
+		chThdSleepMilliseconds(200);
+		sleep_based_usecs += 200000;
+	}
+
+	assert(0);
+	return 0;
+}
+
+#if 0
+// Running the above `thread_main_for_timing_race` with `thread_main_for_sleep_timer`
+// for about a minute will cause it to output something like this:
+```
+Time based on systime:  123222.000
+Time based on sleeping: 120200.000
+Ticks based on gpu?:    60073.009
+```
+
+// The `Ticks based on gpu?` row is derived from the contents of the CLO
+// register (and the CHI register, if it gets large enough).
+// And it's also the row with the correct time, as measured by an external
+// clock (e.g. wristwatch in stopwatch mode).
+// This suggests that the system's other ways of measuring time are not
+// accurate, but that the {CLO,CHI} registers are plenty accurate for
+// the purposes of this project/device.
+// In one test run (not shown), I ran this for over an hour, and the {CLO,CHI}
+// registers were still in sync with the stopwatch to within one second
+// (and any difference seemed to be primarily due to my hitting the start
+// button on the stopwatch just a fraction of a second later than when this
+// code on the BCM2835 started counting).
+//
+// Conclusion:
+// Given the plentiful accuracy and excellent granularity of the {CLO,CHI}
+// register method of measuring time, I intend to replace existing timekeeping
+// code (ex: `sleep_ms_for_tepht`) with something based on {CLO,CHI}, then,
+// going forward, use the {CLO,CHI} measurements for any other timekeeping needs.
+#endif
+#endif
+
 /// Application entry point.
 int main(void) {
 	bss = (BaseSequentialStream *)&SD1;
@@ -1647,6 +1852,11 @@ int main(void) {
 	// Serial port initialization.
 	sdStart(&SD1, NULL);
 	chprintf((BaseSequentialStream *)&SD1, "Main (SD1 started)\r\n");
+
+	uint64_t  gpu_ticks_start = bcm2835_get_time_usecs();
+	chprintf(bss, "GPU start time, milliseconds: ");
+	print_thousandths_i64(bss, gpu_ticks_start);
+	chprintf(bss, "\n");
 
 	// Shell initialization.
 #if 0
@@ -1683,7 +1893,13 @@ int main(void) {
 
 	//(void)calculate_system_time_in_usecs();
 
+#if 0
+	// Disabled while testing/developing timing and display logic.
 	chThdCreateStatic(waThread1, sizeof(waThread1), NORMALPRIO, thread_main_for_i2c_sensors, NULL);
+#endif
+	chThdCreateStatic(waThread1, sizeof(waThread1), NORMALPRIO, thread_main_for_granularity_test, NULL);
+	//chThdCreateStatic(waThread1, sizeof(waThread1), NORMALPRIO, thread_main_for_timing_race, NULL);
+	//chThdCreateStatic(waThread3, sizeof(waThread3), NORMALPRIO, thread_main_for_sleep_timer, NULL);
 
 #ifdef EARGEAR_PUMP_OPERATION
 	chThdCreateStatic(waThread2, sizeof(waThread2), NORMALPRIO, thread_main_for_pump_control, NULL);
